@@ -12,12 +12,34 @@ from assistant_step import fresh_capture, require_wechat
 from ocr_view import load_engine, observe, decode_image
 from daily_words import chinese
 from daily_privacy import assert_no_notification
+from fast_observer import ExactFrameObserver
+
+
+def type_letters(adb, selector, word, centers, width, height):
+    """One USB shell round-trip per word; never include confirm or next-page.
+
+    Only generated, checked integer coordinates enter the Android shell. The
+    word itself is not shell text. A failing input command stops the sequence.
+    """
+    if not re.fullmatch('[a-z]{2,30}', word):
+        raise ValueError('Lowercase alphabetic word only')
+    commands=[]
+    for key in word:
+        point=centers[key]
+        if len(point)!=2 or any(type(c) is not int for c in point):
+            raise ValueError('Keyboard coordinates must be integers')
+        x,y=point
+        if not (0<=x<width and 0<=y<height):
+            raise ValueError('Keyboard coordinate outside screen')
+        commands.append(f'input tap {x} {y}')
+    adb.run(*selector,'shell',' && sleep 0.06 && '.join(commands))
 
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--word',required=True)
     p.add_argument('--clue',required=True)
     p.add_argument('--progress',required=True)
+    p.add_argument('--no-ocr-cache',action='store_true')
     a=p.parse_args()
     if not re.fullmatch('[a-z]{2,30}',a.word): p.error('Lowercase alphabetic word only')
     folder=Path((ROOT/'runs/active_daily_session.txt').read_text(encoding='utf-8').strip())
@@ -25,10 +47,11 @@ def main():
     if not auth.get('automatic_answers') or auth.get('status')=='completed': raise RuntimeError('No active authorization')
     adb=Adb(find_adb(None),20,RunLog(folder));s=adb.selector(adb.select_usb(parse_devices(adb.text('devices','-l')),auth.get('serial')))
     engine=load_engine();engine.use_cls=False
+    observer=ExactFrameObserver(engine,observe,log=adb.log,enabled=not a.no_ocr_cache)
     last_raw=None
     def read():
         nonlocal last_raw
-        require_wechat(adb,s);raw=fresh_capture(adb,s);v=observe(raw,engine=engine,live=True)
+        require_wechat(adb,s);raw=fresh_capture(adb,s);v=observer(raw,live=True)
         assert_no_notification(v)
         last_raw=raw
         (folder/'latest.png').write_bytes(raw);(folder/'latest.json').write_text(json.dumps(v,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -61,15 +84,14 @@ def main():
         y=round(float(np.median([x[2] for x in anchors])))
         for i,key in enumerate(letters):centers[key]=(round(intercept+slope*i),y)
     require_wechat(adb,s)
-    for key in a.word:
-        adb.run(*s,'shell','input','tap',*(str(c) for c in centers[key]))
-        time.sleep(.06)
+    type_letters(adb,s,a.word,centers,v['width'],v['height'])
     typed=read()
     if (difflib.SequenceMatcher(None,chinese(''.join(clues(typed))),chinese(''.join(body))).ratio()<.96
             or not any(e['text']==a.progress and 260<e['center'][1]<420 for e in typed['elements'])):
         raise RuntimeError('Question changed while typing')
     buttons=[e for e in typed['elements'] if e['text']=='确认' and e['confidence']>=.85 and e['center'][1]>v['height']*.9]
     if len(buttons)!=1: raise RuntimeError('Keyboard confirm not clearly visible')
+    require_wechat(adb,s)
     adb.run(*s,'shell','input','tap',*(str(c) for c in buttons[0]['center']))
     time.sleep(.7);after=read()
     n,total=map(int,a.progress.split('/'))

@@ -10,5 +10,4 @@ Other Python wheel components, including OpenCV/FFmpeg and Shapely/GEOS, retain 
 No Microsoft fonts are redistributed; the app uses a locally installed Windows font when available.
 Project-authored source has not been assigned an open-source license.
 
-GEOS 3.14.1, used by Shapely: LGPL-2.1-or-later; matching source: third_party/sources/geos-3.14.1.tar.bz2.
-The optional OpenCV opencv_videoio_ffmpeg500_64.dll video-file plugin is omitted; image decoding remains enabled.
+GEOS 3.14.1: LGPL-2.1-or-later; corresponding source is included in third_party/sources. The optional OpenCV video-file FFmpeg DLL is omitted; image decoding remains enabled.

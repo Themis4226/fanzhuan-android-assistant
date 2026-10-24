@@ -9,20 +9,23 @@ from assistant_step import fresh_capture,require_wechat
 from ocr_view import load_engine,observe
 from daily_words import canonical
 from daily_privacy import assert_no_notification
+from fast_observer import ExactFrameObserver
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--header',required=True);p.add_argument('--count',type=int,default=20);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--header',required=True);p.add_argument('--count',type=int,default=20)
+    p.add_argument('--no-ocr-cache',action='store_true');a=p.parse_args()
     if not 1<=a.count<=30:p.error('count must be 1..30')
     folder=Path((ROOT/'runs/active_daily_session.txt').read_text(encoding='utf-8').strip())
     auth=json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
     if not auth.get('automatic_answers') or auth.get('status')=='completed':raise RuntimeError('No active daily authorization')
     adb=Adb(find_adb(None),20,RunLog(folder));s=adb.selector(adb.select_usb(parse_devices(adb.text('devices','-l')),auth.get('serial')))
     engine=load_engine();engine.use_cls=False
+    observer=ExactFrameObserver(engine,observe,log=adb.log,enabled=not a.no_ocr_cache)
     last_raw=None
     def completed(v):return any('当前卡包已完成' in e['text'] or '任务已完成' in e['text'] for e in v['elements'])
     def read():
         nonlocal last_raw
-        require_wechat(adb,s);last_raw=fresh_capture(adb,s);v=observe(last_raw,engine=engine,live=True)
+        require_wechat(adb,s);last_raw=fresh_capture(adb,s);v=observer(last_raw,live=True)
         assert_no_notification(v)
         (folder/'latest.png').write_bytes(last_raw);(folder/'latest.json').write_text(json.dumps(v,ensure_ascii=False,indent=2),encoding='utf-8')
         if not completed(v) and not any(canonical(e['text'])==canonical(a.header) and e['center'][1]<260 for e in v['elements']):raise RuntimeError('Listening header changed')
@@ -35,8 +38,8 @@ def main():
         results=[re.fullmatch(r'已播放第?(\d+)遍',e['text']) for e in v['elements']]
         counts=[int(m.group(1)) for m in results if m]
         return counts[0] if len(counts)==1 else None
+    v=read()
     for step in range(a.count):
-        v=read()
         if completed(v):
             (folder/'listening_completion.png').write_bytes(last_raw)
             print(json.dumps({'status':'listening_completion_observed'},ensure_ascii=False),flush=True);return
@@ -71,6 +74,7 @@ def main():
         print(json.dumps({'page':current,'status':'played_once_and_advanced','completion':completed(after)},ensure_ascii=False),flush=True)
         if completed(after):
             (folder/'listening_completion.png').write_bytes(last_raw);return
+        v=after
     print('Bounded listening batch finished',flush=True)
 
 if __name__=='__main__':main()

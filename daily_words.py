@@ -14,6 +14,7 @@ from ocr_view import load_engine, observe
 from ocr_view import decode_image
 from model_control import build_request, call_deepseek, load_api_key, validate_decision
 from daily_privacy import assert_no_notification
+from fast_observer import ExactFrameObserver
 
 
 def chinese(text):
@@ -51,6 +52,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--count', type=int, default=5)
     parser.add_argument('--skip-review', action='store_true', help='Use normal upward swipes to bypass definition cards')
+    parser.add_argument('--no-ocr-cache', action='store_true', help='Re-run OCR even for identical fresh screenshots')
     args = parser.parse_args()
     if not 1 <= args.count <= 50:
         parser.error('count must be 1..50')
@@ -64,6 +66,7 @@ def main():
     # This verified portrait UI is upright. Avoid rotating short Latin words
     # such as "soup" into the false OCR reading "dnos".
     engine.use_cls = False
+    observer = ExactFrameObserver(engine, observe, log=adb.log, enabled=not args.no_ocr_cache)
 
     last_raw = None
     dictionary = {}
@@ -88,7 +91,7 @@ def main():
         require_wechat(adb, selector)
         raw = fresh_capture(adb, selector)
         last_raw = raw
-        view = observe(raw, engine=engine, live=True)
+        view = observer(raw, live=True)
         assert_no_notification(view)
         (folder/'latest.png').write_bytes(raw)
         (folder/'latest.json').write_text(json.dumps(view, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -101,8 +104,8 @@ def main():
         adb.run(*selector, 'shell', 'input', 'swipe', str(x), str(y1), str(x), str(y2), '600')
         time.sleep(.6)
 
+    view = read()
     for _ in range(args.count):
-        view = read()
         if not any('卡包' in e['text'] for e in view['elements']):
             print(json.dumps({'status':'stopped_page_changed'}, ensure_ascii=False), flush=True)
             return
@@ -179,6 +182,10 @@ def main():
                 stream.write(json.dumps(record,ensure_ascii=False)+'\n')
             print(json.dumps(record,ensure_ascii=False),flush=True)
             advance(view)
+            after = read()
+            if question_signature(after) == question_signature(view):
+                raise RuntimeError('Answered card did not advance; paused')
+            view = after
             continue
         if args.skip_review:
             advance(view)
@@ -187,6 +194,7 @@ def main():
             after=read()
             if question_signature(after)==question_signature(view):
                 raise RuntimeError('Skipped card did not advance; paused')
+            view = after
             continue
         # Reveal definitions only when the optional review flow is selected.
         body = [e['text'] for e in view['elements'] if e['bounds'][1] > view['height']*.35]
@@ -217,7 +225,8 @@ def main():
         if word['text'] in next_words and not any(re.match(r'^[ABCD][.、:．)]',e['text']) for e in after['elements']):
             print(json.dumps({'status':'stopped_card_did_not_advance','word':word['text']}, ensure_ascii=False), flush=True)
             return
-    final=read()
+        view = after
+    final=view
     print(json.dumps({'status':'batch_finished','count':args.count,
         'current_text':[e['text'] for e in final['elements'] if e['bounds'][1]>220]}, ensure_ascii=False), flush=True)
 

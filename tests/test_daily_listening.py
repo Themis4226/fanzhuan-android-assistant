@@ -29,7 +29,7 @@ class ListeningTransitionTests(unittest.TestCase):
                  patch.object(daily_listening,'load_engine',return_value=SimpleNamespace()),\
                  patch.object(daily_listening,'fresh_capture',return_value=b'local-screenshot'),\
                  patch.object(daily_listening,'observe',side_effect=views),patch.object(daily_listening,'require_wechat'),\
-                 patch.object(daily_listening.time,'sleep'),patch('sys.argv',['daily_listening.py','--header','Listening','--count','1']),\
+                 patch.object(daily_listening.time,'sleep'),patch('sys.argv',['daily_listening.py','--header','Listening','--count','1','--no-ocr-cache']),\
                  contextlib.redirect_stdout(io.StringIO()):
                 daily_listening.main()
             taps=[call.args for call in adb.run.call_args_list if 'tap' in call.args]

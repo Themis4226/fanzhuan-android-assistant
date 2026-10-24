@@ -25,7 +25,7 @@ def main():
     manifest['verification']='PACKAGE_VALIDATION.json'
     manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
     source_count=b.audit(source);portable_count=b.audit(portable)
-    names=[('fanzhuan-android-source-v0.1.0.zip',source),('fanzhuan-android-windows-x64-v0.1.0.zip',portable)]
+    names=[(f'fanzhuan-android-source-{b.VERSION}.zip',source),(f'fanzhuan-android-windows-x64-{b.VERSION}.zip',portable)]
     values=b.private_values();assets=[]
     for name,tree in names:
         archive=output/name;b.archive_tree(tree,archive)
