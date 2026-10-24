@@ -1,0 +1,2 @@
+# Phase 1 uses only the Python standard library. No pip install is required.
+# Optional local OCR dependencies are listed in requirements-ocr.txt.

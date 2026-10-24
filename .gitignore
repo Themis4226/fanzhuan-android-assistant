@@ -1,0 +1,15 @@
+.venv/
+runtime/
+runs/
+.env*
+!.env.example
+__pycache__/
+*.pyc
+tools/scrcpy*/
+tools/platform-tools/
+tools/downloads/
+packaging_cache/
+dist/
+third_party/sources/
+*.key
+adbkey*

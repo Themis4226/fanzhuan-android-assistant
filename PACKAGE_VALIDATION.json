@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "verified_at_utc": "2026-10-24T12:11:32.066795+00:00",
+  "checks": [
+    {
+      "name": "isolated_runtime_and_imports",
+      "passed": true
+    },
+    {
+      "name": "offline_regression_tests",
+      "passed": true
+    },
+    {
+      "name": "synthetic_local_ocr",
+      "passed": true
+    },
+    {
+      "name": "safe_launcher_exit",
+      "passed": true
+    },
+    {
+      "name": "session_help",
+      "passed": true
+    },
+    {
+      "name": "bundled_adb",
+      "passed": true
+    },
+    {
+      "name": "bundled_scrcpy",
+      "passed": true
+    },
+    {
+      "name": "portable_cmd_wrapper",
+      "passed": true
+    }
+  ],
+  "versions": {
+    "python": "3.13.13",
+    "numpy": "2.5.4",
+    "opencv": "5.0.0",
+    "onnxruntime": "1.31.0",
+    "relocated_imports": true
+  },
+  "test_summary": "----------------------------------------------------------------------\nRan 53 tests in 1.677s\n\nOK",
+  "api_calls": 0,
+  "phone_control_actions": 0,
+  "python_network_blocked": true,
+  "relocated_under_unicode_and_spaces": true,
+  "new_clean_windows_machine_verified": false,
+  "limitations": "Verified on the current Windows computer after copying to a new Unicode/spaces path. Target USB drivers and system VC runtime depend on the target PC."
+}

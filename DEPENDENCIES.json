@@ -1,0 +1,194 @@
+[
+  {
+    "name": "PyYAML",
+    "version": "6.0.3",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/PyYAML/pyyaml-6.0.3.dist-info/licenses/LICENSE"
+    ]
+  },
+  {
+    "name": "certifi",
+    "version": "2026.10.23",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/certifi/certifi-2026.10.23.dist-info/licenses/LICENSE"
+    ]
+  },
+  {
+    "name": "charset-normalizer",
+    "version": "3.5.2",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/charset-normalizer/charset_normalizer-3.5.2.dist-info/licenses/LICENSE"
+    ]
+  },
+  {
+    "name": "colorama",
+    "version": "0.4.6",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/colorama/colorama-0.4.6.dist-info/licenses/LICENSE.txt"
+    ]
+  },
+  {
+    "name": "colorlog",
+    "version": "6.12.0",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/colorlog/colorlog-6.12.0.dist-info/licenses/LICENSE"
+    ]
+  },
+  {
+    "name": "flatbuffers",
+    "version": "25.12.19",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/flatbuffers/LICENSE.txt"
+    ]
+  },
+  {
+    "name": "idna",
+    "version": "3.20",
+    "license_expression": "BSD-3-Clause",
+    "license_files": [
+      "third_party/licenses/idna/idna-3.20.dist-info/licenses/LICENSE.md"
+    ]
+  },
+  {
+    "name": "numpy",
+    "version": "2.5.4",
+    "license_expression": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+    "license_files": [
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/LICENSE.txt",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/_core/src/common/pythoncapi-compat/COPYING",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/_core/src/highway/LICENSE",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/_core/src/multiarray/dragon4_LICENSE.txt",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/_core/src/npysort/x86-simd-sort/LICENSE.md",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/_core/src/umath/svml/LICENSE",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/fft/pocketfft/LICENSE.md",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/linalg/lapack_lite/LICENSE.txt",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/ma/LICENSE",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/random/LICENSE.md",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/random/src/distributions/LICENSE.md",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/random/src/mt19937/LICENSE.md",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/random/src/pcg64/LICENSE.md",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/random/src/philox/LICENSE.md",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/random/src/sfc64/LICENSE.md",
+      "third_party/licenses/numpy/numpy-2.5.4.dist-info/licenses/numpy/random/src/splitmix64/LICENSE.md",
+      "third_party/licenses/numpy/numpy/_core/include/numpy/random/LICENSE.txt",
+      "third_party/licenses/numpy/numpy/ma/LICENSE",
+      "third_party/licenses/numpy/numpy/random/LICENSE.md"
+    ]
+  },
+  {
+    "name": "omegaconf",
+    "version": "2.4.0",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/omegaconf/omegaconf-2.4.0.dist-info/licenses/LICENSE"
+    ]
+  },
+  {
+    "name": "onnxruntime",
+    "version": "1.31.0",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/onnxruntime/onnxruntime/LICENSE",
+      "third_party/licenses/onnxruntime/onnxruntime/ThirdPartyNotices.txt"
+    ]
+  },
+  {
+    "name": "opencv-python-headless",
+    "version": "5.0.0.93",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/opencv-python-headless/cv2/LICENSE-3RD-PARTY.txt",
+      "third_party/licenses/opencv-python-headless/cv2/LICENSE.txt",
+      "third_party/licenses/opencv-python-headless/opencv_python_headless-5.0.0.93.dist-info/LICENSE-3RD-PARTY.txt",
+      "third_party/licenses/opencv-python-headless/opencv_python_headless-5.0.0.93.dist-info/LICENSE.txt"
+    ]
+  },
+  {
+    "name": "packaging",
+    "version": "26.3",
+    "license_expression": "Apache-2.0 OR BSD-2-Clause",
+    "license_files": [
+      "third_party/licenses/packaging/packaging-26.3.dist-info/licenses/LICENSE"
+    ]
+  },
+  {
+    "name": "pillow",
+    "version": "13.0.0",
+    "license_expression": "MIT-CMU",
+    "license_files": [
+      "third_party/licenses/pillow/pillow-13.0.0.dist-info/licenses/LICENSE"
+    ]
+  },
+  {
+    "name": "protobuf",
+    "version": "7.36.2",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/protobuf/protobuf-7.36.2.dist-info/LICENSE"
+    ]
+  },
+  {
+    "name": "pyclipper",
+    "version": "1.4.0",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/pyclipper/pyclipper-1.4.0.dist-info/licenses/LICENSE"
+    ]
+  },
+  {
+    "name": "rapidocr",
+    "version": "3.10.0",
+    "license_expression": "Apache-2.0",
+    "license_files": [
+      "third_party/licenses/rapidocr/rapidocr-3.10.0.dist-info/licenses/LICENSE",
+      "third_party/licenses/rapidocr/rapidocr-3.10.0.dist-info/licenses/MODEL_LICENSES.md"
+    ]
+  },
+  {
+    "name": "requests",
+    "version": "2.34.2",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/requests/requests-2.34.2.dist-info/licenses/LICENSE"
+    ]
+  },
+  {
+    "name": "shapely",
+    "version": "2.2.0",
+    "license_expression": "BSD-3-Clause",
+    "license_files": [
+      "third_party/licenses/shapely/shapely-2.2.0.dist-info/licenses/LICENSE.txt"
+    ]
+  },
+  {
+    "name": "six",
+    "version": "1.17.0",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/six/six-1.17.0.dist-info/LICENSE"
+    ]
+  },
+  {
+    "name": "tqdm",
+    "version": "4.70.1",
+    "license_expression": null,
+    "license_files": [
+      "third_party/licenses/tqdm/tqdm-4.70.1.dist-info/licenses/LICENCE"
+    ]
+  },
+  {
+    "name": "urllib3",
+    "version": "2.8.0",
+    "license_expression": "MIT",
+    "license_files": [
+      "third_party/licenses/urllib3/urllib3-2.8.0.dist-info/licenses/LICENSE.txt"
+    ]
+  }
+]
