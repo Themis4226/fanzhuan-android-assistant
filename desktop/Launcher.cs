@@ -26,6 +26,8 @@ namespace FanzhuanDesktop {
                 try {
                     var form = new MainWindow();
                     if (args.Length == 2 && args[0] == "--self-test") form.TestDirectory = Path.GetFullPath(args[1]);
+                    if (args.Length == 1 && args[0] == "--start-words") form.StartWordsOnOpen = true;
+                    if (args.Length == 1 && args[0] == "--start-daily") form.StartDailyOnOpen = true;
                     Application.Run(form); return form.TestFailed ? 1 : 0;
                 } catch (Exception e) { MessageBox.Show(e.Message, "启动失败"); return 1; }
             }
@@ -71,22 +73,25 @@ namespace FanzhuanDesktop {
     sealed class SessionDialog : Form {
         public CheckBox Answers = new CheckBox { Text = "授权本次会话自动答题和提交", AutoSize = true };
         public CheckBox Paid = new CheckBox { Text = "允许 DeepSeek 付费调用（仅发送题目 OCR 文字）", AutoSize = true };
+        public CheckBox DirectChoices = new CheckBox { Text = "语法 / 阅读直接选择首个选项（不保证正确率）", AutoSize = true };
+        public CheckBox SkipStudy = new CheckBox { Text = "跳过已识别的讲解视频（听力仍实际播放）", AutoSize = true };
         public NumericUpDown Limit = new NumericUpDown { Minimum = 0, Maximum = 100, Value = 0, Enabled = false, Width = 95 };
         TextBox headers = new TextBox { Width = 480, Height = 70, Multiline = true, ScrollBars = ScrollBars.Vertical };
         public SessionDialog() {
-            Text = "新建本地会话"; Size = new Size(550, 400); FormBorderStyle = FormBorderStyle.FixedDialog;
+            Text = "新建本地会话"; Size = new Size(550, 520); FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent; MaximizeBox = false; MinimizeBox = false;
             Font = new Font("Microsoft YaHei UI", 10);
             var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), FlowDirection = FlowDirection.TopDown, WrapContents = false };
             panel.Controls.Add(new Label { Text = "默认不授权答题、不调用付费 API。", AutoSize = true, Margin = new Padding(0, 0, 0, 16) });
             panel.Controls.Add(Answers); panel.Controls.Add(Paid);
+            panel.Controls.Add(DirectChoices); panel.Controls.Add(SkipStudy);
             var row = new FlowLayoutPanel { AutoSize = true }; row.Controls.Add(new Label { Text = "API 次数上限", AutoSize = true, Padding = new Padding(0, 5, 0, 0) }); row.Controls.Add(Limit); panel.Controls.Add(row);
             panel.Controls.Add(new Label { Text = "允许直接选项的语法/阅读标题（可选，每行一个）", AutoSize = true, Margin = new Padding(0, 12, 0, 4) });
             panel.Controls.Add(headers);
             var ok = new Button { Text = "创建会话", Size = new Size(120, 36), Margin = new Padding(0, 14, 0, 0) };
             Paid.CheckedChanged += delegate { Limit.Enabled = Paid.Checked; if (!Paid.Checked) Limit.Value = 0; };
             ok.Click += delegate {
-                if ((Paid.Checked || headers.Text.Trim().Length > 0) && !Answers.Checked) { MessageBox.Show("请先明确授权本次自动答题和提交。", Text); return; }
+                if ((Paid.Checked || DirectChoices.Checked || SkipStudy.Checked || headers.Text.Trim().Length > 0) && !Answers.Checked) { MessageBox.Show("请先明确授权本次自动答题和提交。", Text); return; }
                 if (Paid.Checked && Limit.Value == 0) { MessageBox.Show("启用付费调用时，请填写大于0的次数上限。", Text); return; }
                 DialogResult = DialogResult.OK; Close();
             };
@@ -96,6 +101,8 @@ namespace FanzhuanDesktop {
             var args = new List<string> { "session_init.py" };
             if (Answers.Checked) args.Add("--authorize-answers");
             if (Paid.Checked) args.AddRange(new[] { "--allow-api", "--api-call-limit", Limit.Value.ToString() });
+            if (DirectChoices.Checked) args.AddRange(new[] { "--arbitrary-choice-category", "语法", "--arbitrary-choice-category", "阅读" });
+            if (SkipStudy.Checked) args.Add("--skip-study");
             foreach (var h in headers.Lines.Select(x => x.Trim()).Where(x => x.Length > 0)) args.AddRange(new[] { "--arbitrary-choice-header", h });
             return args.ToArray();
         }
@@ -105,7 +112,7 @@ namespace FanzhuanDesktop {
         Label session = new Label { AutoSize = false, Height = 48, Dock = DockStyle.Fill };
         Label state = new Label { Text = "就绪", AutoSize = true, Padding = new Padding(0, 7, 0, 0) };
         TextBox log = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false, Dock = DockStyle.Fill, BackColor = Color.FromArgb(248, 250, 252), Font = new Font("Consolas", 10) };
-        ComboBox mode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 175 };
+        ComboBox mode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 210 };
         NumericUpDown count = new NumericUpDown { Minimum = 1, Maximum = 50, Value = 50, Width = 75 };
         TextBox header = new TextBox { Width = 260 };
         Button start = new Button(), stop = new Button(), newSession = new Button(), closeSession = new Button();
@@ -113,8 +120,8 @@ namespace FanzhuanDesktop {
         List<Button> jobButtons = new List<Button>();
         Process worker; bool stopping; StreamWriter logFile; string lastLog = "";
         string[] secrets; Dictionary<string, object> metadata;
-        readonly string[] taskScripts = { "daily_word_tasks.py", "daily_words.py", "daily_listening.py", "daily_choice_pages.py", "daily_spell.py", "daily_navigate.py", "daily_suggest.py", "assistant_step.py", "session_init.py" };
-        public string TestDirectory; public bool TestFailed;
+        readonly string[] taskScripts = { "daily_tasks.py", "daily_word_tasks.py", "daily_words.py", "daily_listening.py", "daily_choice_pages.py", "daily_spell.py", "daily_navigate.py", "daily_suggest.py", "assistant_step.py", "session_init.py" };
+        public string TestDirectory; public bool TestFailed; public bool StartWordsOnOpen; public bool StartDailyOnOpen;
         System.Windows.Forms.Timer testTimer; int testStage; bool testLineSeen;
         public bool Busy { get { return worker != null; } }
         public MainWindow() {
@@ -125,7 +132,7 @@ namespace FanzhuanDesktop {
             foreach (var h in new[] { 45, 45, 55, 50, 48, 52 }) page.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
             page.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             page.Controls.Add(new Label { Text = "翻转外语助手", Font = new Font("Microsoft YaHei UI", 21, FontStyle.Bold), ForeColor = Color.FromArgb(0, 120, 110), AutoSize = true }, 0, 0);
-            page.Controls.Add(new Label { Text = "先在手机打开对应练习页，再开始批次。日志直接显示在窗口内。", AutoSize = true, ForeColor = Color.DimGray, Padding = new Padding(0, 10, 0, 0) }, 0, 1);
+            page.Controls.Add(new Label { Text = "每日任务模式从“今日任务”首页开始；单科模式进入对应练习页。", AutoSize = true, ForeColor = Color.DimGray, Padding = new Padding(0, 10, 0, 0) }, 0, 1);
             var tools = Row();
             AddJob(tools, "检查连接", new[] { "phone_capture.py", "doctor" });
             AddJob(tools, "截图查看", new[] { "phone_capture.py", "capture", "--open" });
@@ -140,15 +147,17 @@ namespace FanzhuanDesktop {
                 if (!OtherWorker()) RunJob("结束本地会话", new[] { "desktop_helper.py", "--close-session" });
             });
             AddButton(sessions, "刷新状态", delegate { RefreshSession(); }); page.Controls.Add(sessions, 0, 3);
-            var options = Row(); mode.Items.AddRange(new object[] { "单词卡包", "听力播放", "语法 / 阅读选项" }); mode.SelectedIndex = 0;
+            var options = Row(); mode.Items.AddRange(new object[] { "单词卡包", "听力播放", "语法 / 阅读选项", "每日任务（自动衔接）" });
             options.Controls.Add(mode); options.Controls.Add(new Label { Text = "最多步数", AutoSize = true, Padding = new Padding(4, 6, 0, 0) }); options.Controls.Add(count);
             options.Controls.Add(new Label { Text = "页面标题", AutoSize = true, Padding = new Padding(12, 6, 0, 0) }); options.Controls.Add(header);
-            mode.SelectedIndexChanged += delegate { count.Maximum = mode.SelectedIndex == 0 ? 50 : mode.SelectedIndex == 1 ? 30 : 20; header.Enabled = mode.SelectedIndex != 0; chainWords.Visible = mode.SelectedIndex == 0; };
-            header.Enabled = false; page.Controls.Add(options, 0, 4);
+            mode.SelectedIndexChanged += delegate { count.Maximum = mode.SelectedIndex == 0 || mode.SelectedIndex == 3 ? 50 : mode.SelectedIndex == 1 ? 30 : 20; count.Enabled = mode.SelectedIndex != 3; header.Enabled = mode.SelectedIndex == 1 || mode.SelectedIndex == 2; chainWords.Visible = mode.SelectedIndex == 0; };
+            mode.SelectedIndex = 3; page.Controls.Add(options, 0, 4);
             var actions = Row(); start = AddButton(actions, "开始运行", delegate { StartTask(); }); start.BackColor = Color.FromArgb(0, 130, 118); start.ForeColor = Color.White;
             stop = AddButton(actions, "停止当前批次", delegate { StopJob(); }); stop.Enabled = false;
             actions.Controls.Add(state); actions.Controls.Add(chainWords); page.Controls.Add(actions, 0, 5); page.Controls.Add(log, 0, 6); Controls.Add(page);
-            Shown += delegate { RefreshSession(); if (TestDirectory != null) BeginTests(); };
+            Shown += delegate { RefreshSession(); if (TestDirectory != null) BeginTests();
+                                else if (StartWordsOnOpen) { mode.SelectedIndex = 0; BeginInvoke(new Action(StartTask)); }
+                                else if (StartDailyOnOpen) { mode.SelectedIndex = 3; BeginInvoke(new Action(StartTask)); } };
             FormClosing += delegate { if (Busy) StopJob(); };
             FormClosed += delegate { if (logFile != null) logFile.Dispose(); };
         }
@@ -203,7 +212,8 @@ namespace FanzhuanDesktop {
             if (Busy) return; RefreshSession();
             if (metadata == null || Convert.ToString(metadata["status"]) != "active" || !Convert.ToBoolean(metadata["authorized"])) { Append("请先创建已授权自动答题的本地会话。不会自动新增调用额度。"); return; }
             var args = new List<string>();
-            if (mode.SelectedIndex == 0) {
+            if (mode.SelectedIndex == 3) args.AddRange(new[] { "daily_tasks.py", "--max-tasks", "20" });
+            else if (mode.SelectedIndex == 0) {
                 if (chainWords.Checked) args.AddRange(new[] { "daily_word_tasks.py", "--count", count.Value.ToString(), "--max-cards", "6" });
                 else args.AddRange(new[] { "daily_words.py", "--skip-review", "--count", count.Value.ToString() });
             }
@@ -216,7 +226,7 @@ namespace FanzhuanDesktop {
         }
         void SetBusy(bool busy) {
             start.Enabled = !busy; stop.Enabled = busy; newSession.Enabled = !busy; closeSession.Enabled = !busy;
-            mode.Enabled = !busy; count.Enabled = !busy; header.Enabled = !busy && mode.SelectedIndex != 0;
+            mode.Enabled = !busy; count.Enabled = !busy && mode.SelectedIndex != 3; header.Enabled = !busy && (mode.SelectedIndex == 1 || mode.SelectedIndex == 2);
             chainWords.Enabled = !busy;
             foreach (var b in jobButtons) b.Enabled = !busy;
         }
@@ -265,9 +275,10 @@ namespace FanzhuanDesktop {
                 var tricky = new[] { "中文 含空格", "", "quote\"value", @"C:\tail\", "$(no-shell)&literal" };
                 var actual = Program.Json.Deserialize<string[]>(Program.Query(new[] { "desktop_helper.py", "--echo-args" }.Concat(tricky).ToArray()));
                 Require(actual.SequenceEqual(tricky), "参数转义 / Unicode");
-                using (var d = new SessionDialog()) { Require(!d.Answers.Checked && !d.Paid.Checked && d.Limit.Value == 0, "默认授权与费用"); }
+                using (var d = new SessionDialog()) { Require(!d.Answers.Checked && !d.Paid.Checked && !d.DirectChoices.Checked && !d.SkipStudy.Checked && d.Limit.Value == 0, "默认授权与费用"); }
                 Require(Clean("sk-1234567890123456").IndexOf("1234567890123456") < 0, "日志密钥隐藏");
                 Require(chainWords.Checked && taskScripts.Contains("daily_word_tasks.py"), "单词自动衔接默认入口");
+                Require(mode.SelectedIndex == 3 && !header.Enabled && !count.Enabled && taskScripts.Contains("daily_tasks.py"), "每日任务默认入口");
                 testStage = 0; RunJob("桌面离线自检", new[] { "-c", "import time;print('桌面中文测试 OK',flush=True);time.sleep(.3)" });
                 Require(Busy && stop.Enabled && !start.Enabled, "运行按钮互斥");
                 testTimer = new System.Windows.Forms.Timer { Interval = 200 };
@@ -290,7 +301,7 @@ namespace FanzhuanDesktop {
         void EndTests(Exception error) {
             if (testTimer != null) testTimer.Stop(); TestFailed = error != null;
             var report = new Dictionary<string, object> { { "status", error == null ? "passed" : "failed" }, { "phone_actions", 0 }, { "api_calls", 0 },
-                { "checks", new[] { "Unicode and Windows argv", "zero-fee defaults", "secret redaction", "hidden process output", "stop process tree", "busy controls", "word chain default", "window rendering" } } };
+                { "checks", new[] { "Unicode and Windows argv", "zero-fee defaults", "secret redaction", "hidden process output", "stop process tree", "busy controls", "word chain default", "daily coordinator default", "window rendering" } } };
             if (error != null) report["error"] = Clean(error.Message);
             File.WriteAllText(Path.Combine(TestDirectory, "desktop_validation.json"), Program.Json.Serialize(report), new UTF8Encoding(false)); Close();
         }

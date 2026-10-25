@@ -46,7 +46,7 @@ class DesktopSessionTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):desktop_helper.status(root)
 
     def test_closed_session_blocks_every_task_before_adb_or_model(self):
-        cases=[('daily_words',[]),('daily_word_tasks',[]),('daily_listening',['--header','Practice']),
+        cases=[('daily_tasks',[]),('daily_words',[]),('daily_word_tasks',[]),('daily_listening',['--header','Practice']),
                ('daily_choice_pages',['--header','Practice']),('daily_spell',['--word','cat','--clue','猫','--progress','1/25']),
                ('daily_suggest',[]),('daily_navigate',['--tap','完成']),('daily_navigate',['--close-completion'])]
         for name,args in cases:

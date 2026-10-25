@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+import sys
 from unittest.mock import Mock,patch
 
 from PIL import Image,ImageDraw
@@ -132,7 +133,7 @@ class WorkerWiringTests(unittest.TestCase):
             stack.enter_context(patch.object(nav.time,'sleep'))
             stack.enter_context(redirect_stdout(StringIO()))
             if module is daily_words:stack.enter_context(patch.object(daily_words,'call_deepseek',side_effect=AssertionError('No API')))
-            child=stack.enter_context(patch.object(daily_word_tasks.subprocess,'run',return_value=SimpleNamespace(returncode=child_code)))
+            child=stack.enter_context(patch.object(daily_word_tasks,'run_card_worker',return_value=(child_code,'test worker error')))
             module.main(argv)
             report=json.loads((folder/'word_task_chain_result.json').read_text(encoding='utf-8')) if module is daily_word_tasks else None
             return adb,report,child.call_count
@@ -169,6 +170,25 @@ class WorkerWiringTests(unittest.TestCase):
     def test_failed_answer_worker_stops_without_navigation_retry(self):
         with self.assertRaisesRegex(RuntimeError,'单词脚本已暂停'):
             self.run_worker(daily_word_tasks,[b'a7'],[active(7)],[],child_code=1)
+
+    def test_nested_worker_unicode_output_and_actual_failure_are_forwarded(self):
+        output=StringIO()
+        with redirect_stdout(output):
+            code,last=daily_word_tasks.run_card_worker([sys.executable,'-X','utf8','-u','-c',
+                "print('子进程中文进度',flush=True);raise RuntimeError('TEST_BUDGET_EXHAUSTED')"],Path.cwd())
+        self.assertNotEqual(code,0)
+        self.assertIn('子进程中文进度',output.getvalue())
+        self.assertIn('TEST_BUDGET_EXHAUSTED',last)
+
+    def test_resume_checkpoint_requires_same_question_and_course(self):
+        view=active(7);view['elements'][0]['text']='新时代大学进阶英语1卡包.'
+        prior={'status':'paused','resume_card_id':7,'resume_signature':daily_words.question_signature(view),
+               'resume_header':daily_word_tasks.card_header(view)}
+        self.assertTrue(daily_word_tasks.resume_matches(prior,view))
+        view['elements'][1]['text']='学习1/25'
+        self.assertFalse(daily_word_tasks.resume_matches(prior,view))
+        view['elements'][1]['text']='学习0/25';view['elements'][0]['text']='另一本英语课卡包.'
+        self.assertFalse(daily_word_tasks.resume_matches(prior,view))
 
 
 if __name__=='__main__':unittest.main()

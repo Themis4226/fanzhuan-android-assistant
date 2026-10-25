@@ -96,7 +96,8 @@ def main():
     args=parser.parse_args()
     output=(args.output or ROOT/'dist'/datetime.now().strftime('%Y%m%d_%H%M%S')).resolve()
     output.mkdir(parents=True,exist_ok=False)
-    desktop=subprocess.run([sys.executable,str(ROOT/'packaging/build_desktop.py')],capture_output=True,
+    desktop_binary=output/'desktop-launcher.exe'
+    desktop=subprocess.run([sys.executable,str(ROOT/'packaging/build_desktop.py'),'--output',str(desktop_binary)],capture_output=True,
                            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     if desktop.returncode:raise RuntimeError('Desktop build failed: '+desktop.stdout.decode('utf-8',errors='replace')+desktop.stderr.decode('utf-8',errors='replace'))
     cache=ROOT/'packaging_cache';cache.mkdir(exist_ok=True)
@@ -107,7 +108,7 @@ def main():
     for name in ('requirements.txt','requirements-ocr.txt','requirements-ocr.lock.txt'):shutil.copy2(ROOT/name,source/name)
     copy_tree(ROOT/'tests',source/'tests');copy_tree(ROOT/'packaging',source/'packaging')
     copy_tree(ROOT/'desktop',source/'desktop')
-    shutil.copy2(ROOT/'翻转外语助手.exe',source/'翻转外语助手.exe')
+    shutil.copy2(desktop_binary,source/'翻转外语助手.exe')
     shutil.copy2(ROOT/'GUI_USAGE.md',source/'GUI_USAGE.md')
     shutil.copy2(ROOT/'packaging/README.release.md',source/'README.md')
     (source/'.env.example').write_text('# Optional; paid calls are disabled by default.\nDEEPSEEK_API_KEY=\n',encoding='utf-8')

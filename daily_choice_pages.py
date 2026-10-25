@@ -11,11 +11,25 @@ from daily_words import canonical
 from daily_privacy import assert_no_notification
 from fast_observer import ExactFrameObserver
 
+
+def study_video_page(view, title):
+    """Recognize the observed video lesson layout; never skip an unknown page."""
+    texts=view['elements']
+    duration=any(re.fullmatch(r'\d{1,2}:\d{2}',e['text']) and e.get('confidence',0)>=.9
+                 and view['height']*.12<e['center'][1]<view['height']*.45 for e in texts)
+    logo=any('翻转外语' in e['text'] and e.get('confidence',0)>=.9
+             and view['height']*.10<e['center'][1]<view['height']*.45 for e in texts)
+    repeated=any(canonical(e['text'])==canonical(title) and e.get('confidence',0)>=.9
+                 and view['height']*.20<e['center'][1]<view['height']*.60 for e in texts)
+    return duration and logo and repeated
+
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--header',required=True)
     p.add_argument('--count',type=int,default=12)
     p.add_argument('--allow-info-and-scroll',action='store_true')
+    p.add_argument('--skip-study',action='store_true',help='Skip recognized video lessons only with prior session opt-in')
     p.add_argument('--no-ocr-cache',action='store_true')
     a=p.parse_args()
     if not 1<=a.count<=20: p.error('count must be 1..20')
@@ -23,6 +37,8 @@ def main():
     auth=json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
     if not auth.get('automatic_answers') or auth.get('status') in {'completed','closed'} or a.header not in auth.get('arbitrary_choice_headers',[]):
         raise RuntimeError('Explicit arbitrary-choice authorization for this header is missing')
+    if a.skip_study and not auth.get('skip_study_pages'):
+        raise RuntimeError('本次会话尚未授权跳过讲解页。')
     adb=Adb(find_adb(None),20,RunLog(folder))
     s=adb.selector(adb.select_usb(parse_devices(adb.text('devices','-l')),auth.get('serial')))
     engine=load_engine(); engine.use_cls=False
@@ -47,13 +63,18 @@ def main():
         counter=counters[0]; n,total=map(int,counter['text'].split('/'))
         choices=[e for e in v['elements'] if e['text']=='A' and e['confidence']>=.85
                  and e['center'][0]<v['width']*.15 and 280<e['center'][1]<v['height']*.9]
-        if not choices and a.allow_info_and_scroll and any('先看题目' in e['text'] for e in v['elements']):
+        skip_info=a.allow_info_and_scroll and any('先看题目' in e['text'] for e in v['elements'])
+        skip_video=a.skip_study and study_video_page(v,a.header)
+        if not choices and (skip_info or skip_video):
             require_wechat(adb,s)
             adb.run(*s,'shell','input','tap',str(round(v['width']*.925)),str(counter['center'][1]))
             time.sleep(.6)
             next_raw,next_view=read()
-            if not any(e['text']==f'{n+1}/{total}' for e in next_view['elements']):
+            done=any('卡包已完成' in e['text'] for e in next_view['elements'])
+            if not done and not any(e['text']==f'{n+1}/{total}' for e in next_view['elements']):
                 raise RuntimeError('Information page did not advance')
+            adb.log.event('authorized_info_page_skipped',header=a.header,page=counter['text'],
+                          kind='video_lesson' if skip_video else 'question_preview',api_calls=0)
             print(json.dumps({'info_page_skipped':counter['text'],'api_calls':0},ensure_ascii=False),flush=True)
             raw,v=next_raw,next_view
             continue
@@ -62,7 +83,7 @@ def main():
                 require_wechat(adb,s)
                 adb.run(*s,'shell','input','swipe',str(v['width']//2),str(round(v['height']*.75)),str(v['width']//2),str(round(v['height']*.30)),'600')
                 time.sleep(.4)
-                _,v=read()
+                raw,v=read()
                 if not any(e['text']==counter['text'] for e in v['elements']):raise RuntimeError('Page changed during scroll')
                 choices=[e for e in v['elements'] if e['text']=='A' and e['confidence']>=.85
                          and e['center'][0]<v['width']*.15 and 280<e['center'][1]<v['height']*.9]
