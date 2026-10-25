@@ -18,7 +18,7 @@ import urllib.request
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
-VERSION='v0.2.0'
+VERSION='v0.2.1'
 ARTIFACTS=[
  ('python-3.13.13-embed-amd64.zip','https://www.python.org/ftp/python/3.13.13/python-3.13.13-embeddable-amd64.zip','142666a4a9079507815d395b9bfb73546ec391003d385beb559a9d68fb240062'),
  ('scrcpy-win64-v5.0.1.zip','https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-win64-v5.0.1.zip','b12a2c4ee8be317422451fc7dcf8ee20a71b5ea7ef9ad73ddd825a25316227a5'),

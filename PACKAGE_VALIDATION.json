@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "verified_at_utc": "2026-10-25T05:22:53.590906+00:00",
+  "verified_at_utc": "2026-10-25T05:41:33.780724+00:00",
   "checks": [
     {
       "name": "isolated_runtime_and_imports",
@@ -46,7 +46,7 @@
     "onnxruntime": "1.31.0",
     "relocated_imports": true
   },
-  "test_summary": "----------------------------------------------------------------------\nRan 69 tests in 2.695s\n\nOK",
+  "test_summary": "----------------------------------------------------------------------\nRan 84 tests in 4.375s\n\nOK",
   "desktop_validation": {
     "status": "passed",
     "phone_actions": 0,
@@ -58,6 +58,7 @@
       "hidden process output",
       "stop process tree",
       "busy controls",
+      "word chain default",
       "window rendering"
     ]
   },

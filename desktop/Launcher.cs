@@ -109,10 +109,11 @@ namespace FanzhuanDesktop {
         NumericUpDown count = new NumericUpDown { Minimum = 1, Maximum = 50, Value = 50, Width = 75 };
         TextBox header = new TextBox { Width = 260 };
         Button start = new Button(), stop = new Button(), newSession = new Button(), closeSession = new Button();
+        CheckBox chainWords = new CheckBox { Text = "完成后继续下一个单词卡包", Checked = true, AutoSize = true, Padding = new Padding(10, 6, 0, 0) };
         List<Button> jobButtons = new List<Button>();
         Process worker; bool stopping; StreamWriter logFile; string lastLog = "";
         string[] secrets; Dictionary<string, object> metadata;
-        readonly string[] taskScripts = { "daily_words.py", "daily_listening.py", "daily_choice_pages.py", "daily_spell.py", "daily_navigate.py", "daily_suggest.py", "assistant_step.py", "session_init.py" };
+        readonly string[] taskScripts = { "daily_word_tasks.py", "daily_words.py", "daily_listening.py", "daily_choice_pages.py", "daily_spell.py", "daily_navigate.py", "daily_suggest.py", "assistant_step.py", "session_init.py" };
         public string TestDirectory; public bool TestFailed;
         System.Windows.Forms.Timer testTimer; int testStage; bool testLineSeen;
         public bool Busy { get { return worker != null; } }
@@ -142,11 +143,11 @@ namespace FanzhuanDesktop {
             var options = Row(); mode.Items.AddRange(new object[] { "单词卡包", "听力播放", "语法 / 阅读选项" }); mode.SelectedIndex = 0;
             options.Controls.Add(mode); options.Controls.Add(new Label { Text = "最多步数", AutoSize = true, Padding = new Padding(4, 6, 0, 0) }); options.Controls.Add(count);
             options.Controls.Add(new Label { Text = "页面标题", AutoSize = true, Padding = new Padding(12, 6, 0, 0) }); options.Controls.Add(header);
-            mode.SelectedIndexChanged += delegate { count.Maximum = mode.SelectedIndex == 0 ? 50 : mode.SelectedIndex == 1 ? 30 : 20; header.Enabled = mode.SelectedIndex != 0; };
+            mode.SelectedIndexChanged += delegate { count.Maximum = mode.SelectedIndex == 0 ? 50 : mode.SelectedIndex == 1 ? 30 : 20; header.Enabled = mode.SelectedIndex != 0; chainWords.Visible = mode.SelectedIndex == 0; };
             header.Enabled = false; page.Controls.Add(options, 0, 4);
             var actions = Row(); start = AddButton(actions, "开始运行", delegate { StartTask(); }); start.BackColor = Color.FromArgb(0, 130, 118); start.ForeColor = Color.White;
             stop = AddButton(actions, "停止当前批次", delegate { StopJob(); }); stop.Enabled = false;
-            actions.Controls.Add(state); page.Controls.Add(actions, 0, 5); page.Controls.Add(log, 0, 6); Controls.Add(page);
+            actions.Controls.Add(state); actions.Controls.Add(chainWords); page.Controls.Add(actions, 0, 5); page.Controls.Add(log, 0, 6); Controls.Add(page);
             Shown += delegate { RefreshSession(); if (TestDirectory != null) BeginTests(); };
             FormClosing += delegate { if (Busy) StopJob(); };
             FormClosed += delegate { if (logFile != null) logFile.Dispose(); };
@@ -202,7 +203,10 @@ namespace FanzhuanDesktop {
             if (Busy) return; RefreshSession();
             if (metadata == null || Convert.ToString(metadata["status"]) != "active" || !Convert.ToBoolean(metadata["authorized"])) { Append("请先创建已授权自动答题的本地会话。不会自动新增调用额度。"); return; }
             var args = new List<string>();
-            if (mode.SelectedIndex == 0) args.AddRange(new[] { "daily_words.py", "--skip-review", "--count", count.Value.ToString() });
+            if (mode.SelectedIndex == 0) {
+                if (chainWords.Checked) args.AddRange(new[] { "daily_word_tasks.py", "--count", count.Value.ToString(), "--max-cards", "6" });
+                else args.AddRange(new[] { "daily_words.py", "--skip-review", "--count", count.Value.ToString() });
+            }
             else {
                 if (String.IsNullOrWhiteSpace(header.Text)) { Append("请填写手机当前练习页的实际标题。"); return; }
                 args.AddRange(new[] { mode.SelectedIndex == 1 ? "daily_listening.py" : "daily_choice_pages.py", "--header", header.Text.Trim(), "--count", count.Value.ToString() });
@@ -213,6 +217,7 @@ namespace FanzhuanDesktop {
         void SetBusy(bool busy) {
             start.Enabled = !busy; stop.Enabled = busy; newSession.Enabled = !busy; closeSession.Enabled = !busy;
             mode.Enabled = !busy; count.Enabled = !busy; header.Enabled = !busy && mode.SelectedIndex != 0;
+            chainWords.Enabled = !busy;
             foreach (var b in jobButtons) b.Enabled = !busy;
         }
         void RunJob(string label, string[] args) {
@@ -262,6 +267,7 @@ namespace FanzhuanDesktop {
                 Require(actual.SequenceEqual(tricky), "参数转义 / Unicode");
                 using (var d = new SessionDialog()) { Require(!d.Answers.Checked && !d.Paid.Checked && d.Limit.Value == 0, "默认授权与费用"); }
                 Require(Clean("sk-1234567890123456").IndexOf("1234567890123456") < 0, "日志密钥隐藏");
+                Require(chainWords.Checked && taskScripts.Contains("daily_word_tasks.py"), "单词自动衔接默认入口");
                 testStage = 0; RunJob("桌面离线自检", new[] { "-c", "import time;print('桌面中文测试 OK',flush=True);time.sleep(.3)" });
                 Require(Busy && stop.Enabled && !start.Enabled, "运行按钮互斥");
                 testTimer = new System.Windows.Forms.Timer { Interval = 200 };
@@ -284,7 +290,7 @@ namespace FanzhuanDesktop {
         void EndTests(Exception error) {
             if (testTimer != null) testTimer.Stop(); TestFailed = error != null;
             var report = new Dictionary<string, object> { { "status", error == null ? "passed" : "failed" }, { "phone_actions", 0 }, { "api_calls", 0 },
-                { "checks", new[] { "Unicode and Windows argv", "zero-fee defaults", "secret redaction", "hidden process output", "stop process tree", "busy controls", "window rendering" } } };
+                { "checks", new[] { "Unicode and Windows argv", "zero-fee defaults", "secret redaction", "hidden process output", "stop process tree", "busy controls", "word chain default", "window rendering" } } };
             if (error != null) report["error"] = Clean(error.Message);
             File.WriteAllText(Path.Combine(TestDirectory, "desktop_validation.json"), Program.Json.Serialize(report), new UTF8Encoding(false)); Close();
         }

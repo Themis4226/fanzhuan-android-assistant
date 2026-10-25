@@ -15,6 +15,7 @@ from ocr_view import decode_image
 from model_control import build_request, call_deepseek, load_api_key, validate_decision
 from daily_privacy import assert_no_notification
 from fast_observer import ExactFrameObserver
+from word_navigation import is_completion,return_to_word_list
 
 
 def chinese(text):
@@ -48,12 +49,13 @@ def correct_rows(raw, options):
     return results
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--count', type=int, default=5)
     parser.add_argument('--skip-review', action='store_true', help='Use normal upward swipes to bypass definition cards')
     parser.add_argument('--no-ocr-cache', action='store_true', help='Re-run OCR even for identical fresh screenshots')
-    args = parser.parse_args()
+    parser.add_argument('--stay-on-completion',action='store_true',help='Debug only: leave the completed card page open')
+    args = parser.parse_args(argv)
     if not 1 <= args.count <= 50:
         parser.error('count must be 1..50')
     folder = Path((ROOT/'runs/active_daily_session.txt').read_text(encoding='utf-8'))
@@ -104,13 +106,23 @@ def main():
         adb.run(*selector, 'shell', 'input', 'swipe', str(x), str(y1), str(x), str(y2), '600')
         time.sleep(.6)
 
+    def finish(view):
+        if not is_completion(view):return False
+        if args.stay_on_completion:
+            print(json.dumps({'status':'card_completion_observed'},ensure_ascii=False),flush=True)
+        else:
+            def tap(center):
+                require_wechat(adb,selector)
+                adb.run(*selector,'shell','input','tap',*(str(c) for c in center))
+            return_to_word_list(view,read,tap,adb.log)
+            print(json.dumps({'status':'card_completed_returned_to_list'},ensure_ascii=False),flush=True)
+        return True
+
     view = read()
     for _ in range(args.count):
+        if finish(view):return
         if not any('卡包' in e['text'] for e in view['elements']):
             print(json.dumps({'status':'stopped_page_changed'}, ensure_ascii=False), flush=True)
-            return
-        if any('恭喜你完成卡包' in e['text'] for e in view['elements']):
-            print(json.dumps({'status':'card_completion_observed'},ensure_ascii=False),flush=True)
             return
         options = [e for e in view['elements'] if re.match(r'^[ABCD][.、:．)]', e['text'])]
         words = [e for e in view['elements'] if e['bounds'][1] > view['height']*.28
@@ -227,6 +239,7 @@ def main():
             return
         view = after
     final=view
+    if finish(final):return
     print(json.dumps({'status':'batch_finished','count':args.count,
         'current_text':[e['text'] for e in final['elements'] if e['bounds'][1]>220]}, ensure_ascii=False), flush=True)
 
