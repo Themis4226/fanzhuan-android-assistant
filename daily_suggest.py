@@ -18,7 +18,7 @@ def validate_answer_text(target, decision):
 def main():
     folder=Path((ROOT/'runs/active_daily_session.txt').read_text(encoding='utf-8').strip())
     auth=json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
-    if not auth.get('automatic_answers') or auth.get('status')=='completed': raise RuntimeError('No active authorization')
+    if not auth.get('automatic_answers') or auth.get('status') in {'completed','closed'}: raise RuntimeError('No active authorization')
     used=auth.get('used_generation_calls',0)
     if used>=auth['max_new_deepseek_generation_calls']: raise RuntimeError('API budget exhausted')
     adb=Adb(find_adb(None),20,RunLog(folder))

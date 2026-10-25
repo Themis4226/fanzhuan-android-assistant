@@ -18,7 +18,7 @@ def main():
     active=ROOT/'runs/active_daily_session.txt'
     if active.is_file():
         previous=Path(active.read_text(encoding='utf-8').strip())/'authorization.json'
-        if previous.is_file() and json.loads(previous.read_text(encoding='utf-8')).get('status')!='completed':
+        if previous.is_file() and json.loads(previous.read_text(encoding='utf-8')).get('status') not in {'completed','closed'}:
             raise RuntimeError('已有未结束的会话，请先检查现场，不覆盖其进度和额度。')
     folder=ROOT/'runs'/(datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'_daily')
     folder.mkdir(parents=True)

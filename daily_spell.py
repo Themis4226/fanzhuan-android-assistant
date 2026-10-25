@@ -44,7 +44,7 @@ def main():
     if not re.fullmatch('[a-z]{2,30}',a.word): p.error('Lowercase alphabetic word only')
     folder=Path((ROOT/'runs/active_daily_session.txt').read_text(encoding='utf-8').strip())
     auth=json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
-    if not auth.get('automatic_answers') or auth.get('status')=='completed': raise RuntimeError('No active authorization')
+    if not auth.get('automatic_answers') or auth.get('status') in {'completed','closed'}: raise RuntimeError('No active authorization')
     adb=Adb(find_adb(None),20,RunLog(folder));s=adb.selector(adb.select_usb(parse_devices(adb.text('devices','-l')),auth.get('serial')))
     engine=load_engine();engine.use_cls=False
     observer=ExactFrameObserver(engine,observe,log=adb.log,enabled=not a.no_ocr_cache)

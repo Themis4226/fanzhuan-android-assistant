@@ -17,7 +17,7 @@ def main():
     if not 1<=a.count<=30:p.error('count must be 1..30')
     folder=Path((ROOT/'runs/active_daily_session.txt').read_text(encoding='utf-8').strip())
     auth=json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
-    if not auth.get('automatic_answers') or auth.get('status')=='completed':raise RuntimeError('No active daily authorization')
+    if not auth.get('automatic_answers') or auth.get('status') in {'completed','closed'}:raise RuntimeError('No active daily authorization')
     adb=Adb(find_adb(None),20,RunLog(folder));s=adb.selector(adb.select_usb(parse_devices(adb.text('devices','-l')),auth.get('serial')))
     engine=load_engine();engine.use_cls=False
     observer=ExactFrameObserver(engine,observe,log=adb.log,enabled=not a.no_ocr_cache)

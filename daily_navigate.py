@@ -25,8 +25,10 @@ def main():
     folder=Path((ROOT/'runs/active_daily_session.txt').read_text(encoding='utf-8').strip())
     auth=json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
     if not auth.get('automatic_answers'): raise RuntimeError('No daily authorization')
-    if auth.get('status')=='completed' and any((a.tap,a.back,a.up,a.top_back,a.next_page,a.previous_page,a.play_listening)):
+    if auth.get('status') in {'completed','closed'} and any((a.tap,a.back,a.up,a.top_back,a.next_page,a.previous_page,a.play_listening)):
         raise RuntimeError('Daily session completed; mutations are disabled')
+    if auth.get('status')=='closed' and a.close_completion:
+        raise RuntimeError('Daily session closed; mutations are disabled')
     adb=Adb(find_adb(None),20,RunLog(folder))
     selector=adb.selector(adb.select_usb(parse_devices(adb.text('devices','-l')),auth.get('serial')))
     engine=load_engine(); engine.use_cls=False

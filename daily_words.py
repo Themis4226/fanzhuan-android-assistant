@@ -58,7 +58,7 @@ def main():
         parser.error('count must be 1..50')
     folder = Path((ROOT/'runs/active_daily_session.txt').read_text(encoding='utf-8'))
     auth = json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
-    if not auth.get('automatic_answers') or auth.get('status')=='completed':
+    if not auth.get('automatic_answers') or auth.get('status') in {'completed','closed'}:
         raise RuntimeError('Daily task authorization is missing')
     adb = Adb(find_adb(None), 20, RunLog(folder))
     selector = adb.selector(adb.select_usb(parse_devices(adb.text('devices', '-l')), auth.get('serial')))

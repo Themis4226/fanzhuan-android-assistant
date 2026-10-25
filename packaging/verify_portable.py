@@ -41,8 +41,12 @@ def main():
     scrcpy=run('bundled_scrcpy',[str(work/'tools/scrcpy-win64-v5.0.1/scrcpy.exe'),'--version'])
     assert 'scrcpy 5.0.1' in scrcpy.stdout+scrcpy.stderr
     run('portable_cmd_wrapper',f'cmd.exe /d /s /c ""{work / "python.cmd"}" --version"')
+    desktop_test=work/'runs/desktop_validation'
+    run('windowed_launcher_selftest',[str(work/'翻转外语助手.exe'),'--self-test',str(desktop_test)])
+    desktop=json.loads((desktop_test/'desktop_validation.json').read_text(encoding='utf-8'))
+    assert desktop['status']=='passed' and desktop['api_calls']==0 and desktop['phone_actions']==0
     result={'status':'passed','verified_at_utc':datetime.now(timezone.utc).isoformat(),'checks':checks,
-            'versions':json.loads(info.stdout),'test_summary':tests.stderr.strip(),
+            'versions':json.loads(info.stdout),'test_summary':tests.stderr.strip(),'desktop_validation':desktop,
             'api_calls':0,'phone_control_actions':0,'python_network_blocked':True,
             'relocated_under_unicode_and_spaces':True,'new_clean_windows_machine_verified':False,
             'limitations':'Verified on the current Windows computer after copying to a new Unicode/spaces path. Target USB drivers and system VC runtime depend on the target PC.'}

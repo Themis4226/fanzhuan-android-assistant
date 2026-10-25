@@ -6,14 +6,18 @@ Windows x64 的 ADB 截图、scrcpy 投屏、本地 OCR 和有界交互脚本。
 
 ## 下载与启动
 
-从本仓库 **Releases** 下载 `fanzhuan-android-windows-x64-*.zip`，校验同页 SHA256SUMS.txt，完整解压后双击 `start.cmd`。
+从本仓库 **Releases** 下载 `fanzhuan-android-windows-x64-*.zip`，校验同页 SHA256SUMS.txt，完整解压后双击 **翻转外语助手.exe**。
 GitHub 的 Source code.zip 只有源码，不含运行环境；普通使用请选择 Windows 便携 ZIP。
 便携包已包含 Python 3.13.13 x64、锁定版本的 Python 依赖、本地 OCR 模型、ADB 和 scrcpy 5.0.1。
 OpenCV 保留截图/图像处理功能，未分发本项目不用的视频文件 FFmpeg 插件。
 不复制原开发机的虚拟环境，不需要修改系统 PATH；按 Windows 10/11 x64 交付，已在 Windows 11 上验证。
 手机仍需厂商 USB 驱动（Windows 未自动识别时）、开发者选项、USB 调试、解锁并允许 RSA 授权。
 
-菜单提供连接检查、截图、本地 OCR、只读投屏和离线测试。默认无付费请求、无自动答题。
+窗口提供连接检查、截图、本地 OCR、只读投屏、会话管理、单词/听力/语法阅读批次和停止按钮。
+后台脚本日志直接显示在窗口内。新会话默认无付费请求、无自动答题；继续旧会话沿用原有授权和剩余额度。
+详细操作见 GUI_USAGE.md。启动器使用 Windows .NET Framework 4.x，当前 Windows 已具备；无需另装 Python GUI 包。
+不能只复制 exe，它需要同目录的脚本、runtime 和 tools；源码 ZIP 可以使用本地 .venv 或自行准备环境。
+保留 start.cmd 作为兼容入口，launcher.py 为旧控制台菜单。
 
 ```powershell
 .\python.cmd phone_capture.py doctor
@@ -53,7 +57,7 @@ OpenCV 保留截图/图像处理功能，未分发本项目不用的视频文件
 
 本机三张本地任务图、每张连续识别三次的离线对比：OCR 总耗时5.505秒降至1.705秒，
 此重复画面负载约3.23倍；文字、置信度和坐标一致。该结果不包含 USB、动画等待、模型响应或音频时长，
-不代表完成所有每日任务快3.23倍；新版尚未重新完成一轮真机每日任务测速。
+不代表完成所有每日任务快3.23倍。随后单个已准备词库的卡包真机实测约3分58秒、25题通过；实际同图缓存命中0次。
 测试不调用 API、不控制手机，不增加模型费用。日常启动命令不变，解压新版后按原命令运行即可。
 
 自行复测（默认使用合成题面、零 API）：

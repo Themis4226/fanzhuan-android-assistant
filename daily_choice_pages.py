@@ -21,7 +21,7 @@ def main():
     if not 1<=a.count<=20: p.error('count must be 1..20')
     folder=Path((ROOT/'runs/active_daily_session.txt').read_text(encoding='utf-8').strip())
     auth=json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
-    if not auth.get('automatic_answers') or auth.get('status')=='completed' or a.header not in auth.get('arbitrary_choice_headers',[]):
+    if not auth.get('automatic_answers') or auth.get('status') in {'completed','closed'} or a.header not in auth.get('arbitrary_choice_headers',[]):
         raise RuntimeError('Explicit arbitrary-choice authorization for this header is missing')
     adb=Adb(find_adb(None),20,RunLog(folder))
     s=adb.selector(adb.select_usb(parse_devices(adb.text('devices','-l')),auth.get('serial')))

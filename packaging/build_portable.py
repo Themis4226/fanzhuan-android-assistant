@@ -11,12 +11,14 @@ from pathlib import Path
 import re
 import shutil
 import site
+import subprocess
+import sys
 import tarfile
 import urllib.request
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
-VERSION='v0.1.1'
+VERSION='v0.2.0'
 ARTIFACTS=[
  ('python-3.13.13-embed-amd64.zip','https://www.python.org/ftp/python/3.13.13/python-3.13.13-embeddable-amd64.zip','142666a4a9079507815d395b9bfb73546ec391003d385beb559a9d68fb240062'),
  ('scrcpy-win64-v5.0.1.zip','https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-win64-v5.0.1.zip','b12a2c4ee8be317422451fc7dcf8ee20a71b5ea7ef9ad73ddd825a25316227a5'),
@@ -82,7 +84,7 @@ def audit(folder):
                 data=overlap+chunk
                 if any(value in data for value in private):raise RuntimeError('Private credential found in release file')
                 overlap=data[-4096:]
-        if rel.suffix in {'.py','.cmd','.md','.json','.txt','.yml','.yaml'} and rel.parts[0] not in {'runtime','third_party'}:
+        if rel.suffix in {'.py','.cmd','.cs','.md','.json','.txt','.yml','.yaml'} and rel.parts[0] not in {'runtime','third_party'}:
             content=p.read_bytes().lower()
             developer_name=Path.home().name.casefold().encode()
             if len(developer_name)>4 and developer_name in content:raise RuntimeError('Private development path found: '+str(rel))
@@ -94,6 +96,9 @@ def main():
     args=parser.parse_args()
     output=(args.output or ROOT/'dist'/datetime.now().strftime('%Y%m%d_%H%M%S')).resolve()
     output.mkdir(parents=True,exist_ok=False)
+    desktop=subprocess.run([sys.executable,str(ROOT/'packaging/build_desktop.py')],capture_output=True,
+                           creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+    if desktop.returncode:raise RuntimeError('Desktop build failed: '+desktop.stdout.decode('utf-8',errors='replace')+desktop.stderr.decode('utf-8',errors='replace'))
     cache=ROOT/'packaging_cache';cache.mkdir(exist_ok=True)
     with ThreadPoolExecutor(max_workers=4) as pool:artifacts=list(pool.map(lambda item:fetch(cache,item),ARTIFACTS))
     source=output/'source/fanzhuan-android-assistant';source.mkdir(parents=True)
@@ -101,6 +106,9 @@ def main():
         for p in ROOT.glob(pattern):shutil.copy2(p,source/p.name)
     for name in ('requirements.txt','requirements-ocr.txt','requirements-ocr.lock.txt'):shutil.copy2(ROOT/name,source/name)
     copy_tree(ROOT/'tests',source/'tests');copy_tree(ROOT/'packaging',source/'packaging')
+    copy_tree(ROOT/'desktop',source/'desktop')
+    shutil.copy2(ROOT/'翻转外语助手.exe',source/'翻转外语助手.exe')
+    shutil.copy2(ROOT/'GUI_USAGE.md',source/'GUI_USAGE.md')
     shutil.copy2(ROOT/'packaging/README.release.md',source/'README.md')
     (source/'.env.example').write_text('# Optional; paid calls are disabled by default.\nDEEPSEEK_API_KEY=\n',encoding='utf-8')
     (source/'.gitignore').write_text('.venv/\nruntime/\nruns/\n.env*\n!.env.example\n__pycache__/\n*.pyc\ntools/scrcpy*/\ntools/platform-tools/\ntools/downloads/\npackaging_cache/\ndist/\nthird_party/sources/\n*.key\nadbkey*\n',encoding='utf-8')
