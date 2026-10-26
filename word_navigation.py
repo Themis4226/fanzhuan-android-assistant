@@ -26,7 +26,9 @@ def active_card_id(view):
     for e in view['elements']:
         if e['center'][1]<view['height']*.12 and e['confidence']>=.85:
             m=re.search(r'卡包\s*(\d+)',e['text'])
-            if m:ids.append(int(m.group(1)))
+            # A long title runs underneath WeChat's capsule: a visible "1"
+            # may be the prefix of "14". Treat overlapping digits as uncertain.
+            if m and e['bounds'][2]<view['width']*.70:ids.append(int(m.group(1)))
     return ids[0] if len(ids)==1 else None
 
 
@@ -63,7 +65,7 @@ def return_to_word_list(view,read,tap,log):
     return after
 
 
-def task_tiles(raw,view):
+def task_tiles(raw,view,*,allow_empty=False):
     """Require OCR label + word count + detected tile + completion-ribbon check."""
     import cv2
     import numpy as np
@@ -75,7 +77,9 @@ def task_tiles(raw,view):
     _,_,stats,_=cv2.connectedComponentsWithStats(mask)
     labels=[e for e in view['elements'] if re.fullmatch(r'卡包\s*\d+',e['text'])
             and e['confidence']>=.9 and e['center'][1]>height*.12]
-    if not labels:raise RuntimeError('当前可见列表没有清晰的卡包入口。')
+    if not labels:
+        if allow_empty:return []
+        raise RuntimeError('当前可见列表没有清晰的卡包入口。')
     results=[]
     for label in labels:
         cx,cy=label['center']
@@ -96,7 +100,8 @@ def task_tiles(raw,view):
         else:raise RuntimeError('卡包完成角标不明确，停止选择下一项。')
         results.append({'card_id':int(re.search(r'\d+',label['text']).group()),'text':label['text'],
                         'center':label['center'],'bounds':[x,y,x+w,y+h],
-                        'completed':completed,'ribbon_fraction':round(ratio,4)})
+                        'completed':completed,'ribbon_fraction':round(ratio,4),
+                        'word_count':int(re.search(r'\d+',counts[0]['text']).group())})
         headings=[e for e in view['elements'] if e['confidence']>=.9 and e['bounds'][3]<y
                   and 0<y-e['bounds'][3]<height*.2 and len(re.findall(r'[\u4e00-\u9fff]',e['text']))>=4
                   and e['text'] not in {'未完成闯关','历史闯关错词'} and e['center'][1]>height*.12]
@@ -106,21 +111,30 @@ def task_tiles(raw,view):
 
 
 def open_pending_card(read,get_raw,tap,log,attempted=()):
-    view=read();tiles=task_tiles(get_raw(),view)
+    view=read();tiles=task_tiles(get_raw(),view,allow_empty=True)
     pending=[t for t in tiles if not t['completed']]
     if not pending:return None,view
     target=pending[0]
     if target['card_id'] in attempted:raise RuntimeError('已处理卡包仍显示未完成，暂停以防重复刷题。')
+    log.event('word_pending_card_selected',card_id=target['card_id'],course=target.get('course_title'),
+              word_count=target['word_count'],api_calls=0)
     tap(target['center'])
     def entered(v):
         if not is_active_card(v):return False
+        counters=[re.fullmatch(r'学习\s*(\d+)\s*/\s*(\d+)',e['text']) for e in v['elements']]
+        if not any(m and int(m.group(2))==target['word_count'] for m in counters):return False
         observed_id=active_card_id(v)
         if observed_id is not None:return observed_id==target['card_id']
         # WeChat's capsule can obscure the digits. The clicked tile, its course
         # heading and a fresh learning page must all agree before continuing.
         course=target.get('course_title')
-        return bool(course) and any(canonical(e['text']).startswith(canonical(course)+'卡包')
-                                   and e['center'][1]<v['height']*.12 for e in v['elements'])
+        for e in v['elements']:
+            if (not course or e['confidence']<.9 or e['center'][1]>=v['height']*.12
+                    or not canonical(e['text']).startswith(canonical(course)+'卡包')):continue
+            partial=re.search(r'卡包\s*(\d+)',e['text'])
+            if partial and not str(target['card_id']).startswith(str(int(partial.group(1)))):continue
+            return True
+        return False
     after=wait_for(read,entered,'点击待完成卡包后未进入预期的学习页面')
     log.event('word_pending_card_opened',card_id=target['card_id'],text=target['text'],api_calls=0)
     return target['card_id'],after

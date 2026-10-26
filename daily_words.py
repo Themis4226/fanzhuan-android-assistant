@@ -7,15 +7,17 @@ from pathlib import Path
 import re
 import time
 import difflib
+import unicodedata
 
 from phone_capture import ROOT, Adb, RunLog, find_adb, parse_devices, timestamp
 from assistant_step import fresh_capture, require_wechat
 from ocr_view import load_engine, observe
 from ocr_view import decode_image
 from model_control import build_request, call_deepseek, load_api_key, validate_decision
-from daily_privacy import assert_no_notification
+from daily_privacy import notification_free_frame
 from fast_observer import ExactFrameObserver
 from word_navigation import is_completion,return_to_word_list
+from verified_vocabulary import load_definitions
 
 
 def chinese(text):
@@ -26,14 +28,57 @@ def canonical(text):
     return re.sub(r'[^a-z0-9\u4e00-\u9fff]', '', text.lower())
 
 
+def option_identity(text):
+    normalized=unicodedata.normalize('NFKC',text)
+    # The upright POS prefix "v." was observed as Greek nu "ν." in one
+    # animation frame. Normalize only that prefix, not arbitrary answer text.
+    normalized=re.sub(r'^([ABCD][.、:)])\s*ν(?=\s*\.)',r'\1v',normalized)
+    return canonical(normalized)
+
+
 def question_signature(view):
     relevant=[]
     for e in view['elements']:
         text=e['text']
         if (re.match(r'^[ABCD][.、:．)]',text) or re.search(r'学习\s*\d+\s*/\s*\d+',text)
                 or (e['bounds'][1]>view['height']*.28 and re.fullmatch(r'[A-Za-z][A-Za-z -]*',text))):
-            relevant.append(canonical(text))
+            relevant.append(option_identity(text) if re.match(r'^[ABCD][.、:．)]',text) else canonical(text))
     return sorted(relevant)
+
+
+def question_headers(view):
+    return sorted(canonical(e['text']) for e in view['elements']
+                  if '卡包' in e['text'] and e['center'][1]<view['height']*.12)
+
+
+def record_reviewed_answer(folder,view,target_text,reason):
+    """Save a reviewed proposal, never a claim that the answer was submitted."""
+    auth=json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
+    if auth.get('status')!='active' or not auth.get('automatic_answers'):
+        raise RuntimeError('Reviewed proposal requires an active authorized session')
+    targets=[e for e in view['elements'] if re.match(r'^[ABCD][.、:．)]',e['text'])
+             and option_identity(e['text'])==option_identity(target_text) and e['confidence']>=.9]
+    if len(targets)!=1 or not question_headers(view) or not reason:
+        raise RuntimeError('Reviewed answer is not a unique confident option in this question')
+    record={'at':timestamp(),'source':'assistant_review','signature':question_signature(view),
+            'headers':question_headers(view),'target_text':targets[0]['text'],'reason':reason,
+            'observation_id':view.get('observation_id'),'submission_claimed':False}
+    with (folder/'reviewed_answer_proposals.jsonl').open('a',encoding='utf-8') as stream:
+        stream.write(json.dumps(record,ensure_ascii=False)+'\n')
+
+
+def reviewed_answer(folder,view,options):
+    path=folder/'reviewed_answer_proposals.jsonl'
+    if not path.is_file():return None
+    for line in reversed(path.read_text(encoding='utf-8').splitlines()):
+        item=json.loads(line)
+        if (item.get('source')!='assistant_review' or item.get('signature')!=question_signature(view)
+                or item.get('headers')!=question_headers(view)):continue
+        matches=[e for e in options if option_identity(e['text'])==option_identity(item['target_text'])
+                 and e['confidence']>=.9]
+        if len(matches)!=1:raise RuntimeError('Reviewed answer target changed or is ambiguous')
+        return matches[0],item['reason']
+    return None
 
 
 def correct_rows(raw, options):
@@ -72,6 +117,8 @@ def main(argv=None):
 
     last_raw = None
     dictionary = {}
+    for word, meanings in load_definitions(ROOT).items():
+        dictionary.setdefault(word.lower(), []).extend(meanings)
     vocabulary = folder/'agent_vocabulary.json'
     if vocabulary.is_file():
         dictionary.update(json.loads(vocabulary.read_text(encoding='utf-8')))
@@ -90,11 +137,11 @@ def main(argv=None):
 
     def read():
         nonlocal last_raw
-        require_wechat(adb, selector)
-        raw = fresh_capture(adb, selector)
+        def capture():
+            require_wechat(adb,selector)
+            return fresh_capture(adb,selector)
+        raw,view=notification_free_frame(capture,lambda data:observer(data,live=True),adb.log)
         last_raw = raw
-        view = observer(raw, live=True)
-        assert_no_notification(view)
         (folder/'latest.png').write_bytes(raw)
         (folder/'latest.json').write_text(json.dumps(view, ensure_ascii=False, indent=2), encoding='utf-8')
         return view
@@ -145,7 +192,11 @@ def main(argv=None):
                                  for meaning in meanings if chinese(meaning)), default=0)
                     ranked.append((score, option))
                 ranked.sort(key=lambda value:value[0], reverse=True)
-                if (ranked[0][0] >= .88 and ranked[0][0]-ranked[1][0] >= .12
+                reviewed=reviewed_answer(folder,view,options)
+                if reviewed is not None:
+                    target,reason=reviewed
+                    source='assistant_review'
+                elif (ranked[0][0] >= .88 and ranked[0][0]-ranked[1][0] >= .12
                         and ranked[0][1]['confidence'] >= .85):
                     target = ranked[0][1]
                     reason = 'Matched previously observed actual card definition'
@@ -160,6 +211,7 @@ def main(argv=None):
                     body_view['elements'] = [e for e in view['elements'] if 220<=e['bounds'][1]<view['height']-100]
                     body = build_request(body_view)
                     body['messages'][0]['content'] += '\nVerified UI context: this word-card quiz shows an English term followed by four Chinese meanings. Select the meaning of that English term. The app does not print a separate question sentence; that is expected, not missing context.'
+                    body['messages'][0]['content'] += '\nConsider less common dictionary senses and part of speech. Do not assume a clearly legible English token is garbled OCR merely because its meaning is unfamiliar. Handoff remains appropriate when no option can be supported.'
                     auth['used_generation_calls'] = used+1
                     (folder/'authorization.json').write_text(json.dumps(auth,ensure_ascii=False,indent=2),encoding='utf-8')
                     (folder/f'model_{used+1:03d}_request.json').write_text(json.dumps(body,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -175,7 +227,8 @@ def main(argv=None):
                 current = read()
                 if question_signature(current) != question_signature(view):
                     raise RuntimeError('Question changed before tap; paused')
-                live_targets=[e for e in current['elements'] if canonical(e['text'])==canonical(target['text']) and e['confidence']>=.85]
+                live_targets=[e for e in current['elements'] if re.match(r'^[ABCD][.、:．)]',e['text'])
+                              and option_identity(e['text'])==option_identity(target['text']) and e['confidence']>=.85]
                 if len(live_targets)!=1: raise RuntimeError('Live answer target is ambiguous; paused')
                 target=live_targets[0]
                 require_wechat(adb,selector)

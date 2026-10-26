@@ -120,7 +120,8 @@ class Adb:
         except ProbeError as exc:
             raise ProbeError(f"{connection_hint(devices)}\n{exc}") from exc
         if requested and serial != requested:
-            raise ProbeError("--serial 指定的设备与当前唯一 USB 设备不符，已停止。")
+            raise ProbeError("会话绑定的手机与当前 USB 手机不符，已停止。换手机后请在窗口点“更换手机”；"
+                             "命令行可运行 python.cmd session_switch.py --switch-device，保留原剩余额度。")
         matches = [d for d in devices if d["serial"] == serial and d["state"] == "device"]
         if len(matches) != 1 or serial.startswith("emulator-") or ":" in serial:
             raise ProbeError(connection_hint(devices))

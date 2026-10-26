@@ -24,7 +24,9 @@ def status(root=ROOT):
     auth=json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
     used=int(auth.get('used_generation_calls',0));limit=int(auth.get('max_new_deepseek_generation_calls',0))
     return {'status':auth.get('status','unknown'),'authorized':bool(auth.get('automatic_answers')),
-            'remaining':max(0,limit-used),'api_used':used,'api_limit':limit}
+            'remaining':max(0,limit-used),'api_used':used,'api_limit':limit,
+            'can_switch_device':auth.get('status') in {'active','completed'} and bool(auth.get('automatic_answers'))
+                                and not auth.get('budget_transferred_out',False)}
 
 
 def close_session(root=ROOT):

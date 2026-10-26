@@ -18,7 +18,7 @@ import urllib.request
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
-VERSION='v0.2.1'
+VERSION='v0.2.2'
 ARTIFACTS=[
  ('python-3.13.13-embed-amd64.zip','https://www.python.org/ftp/python/3.13.13/python-3.13.13-embeddable-amd64.zip','142666a4a9079507815d395b9bfb73546ec391003d385beb559a9d68fb240062'),
  ('scrcpy-win64-v5.0.1.zip','https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-win64-v5.0.1.zip','b12a2c4ee8be317422451fc7dcf8ee20a71b5ea7ef9ad73ddd825a25316227a5'),
@@ -105,11 +105,13 @@ def main():
     source=output/'source/fanzhuan-android-assistant';source.mkdir(parents=True)
     for pattern in ('*.py','*.cmd'):
         for p in ROOT.glob(pattern):shutil.copy2(p,source/p.name)
-    for name in ('requirements.txt','requirements-ocr.txt','requirements-ocr.lock.txt'):shutil.copy2(ROOT/name,source/name)
+    for name in ('requirements.txt','requirements-ocr.txt','requirements-ocr.lock.txt','course_catalog.json'):shutil.copy2(ROOT/name,source/name)
     copy_tree(ROOT/'tests',source/'tests');copy_tree(ROOT/'packaging',source/'packaging')
     copy_tree(ROOT/'desktop',source/'desktop')
     shutil.copy2(desktop_binary,source/'翻转外语助手.exe')
-    shutil.copy2(ROOT/'GUI_USAGE.md',source/'GUI_USAGE.md')
+    # The working guide contains local validation/session notes. Ship only the
+    # public guide, never a user's device history, budgets or run references.
+    shutil.copy2(ROOT/'packaging/GUI_USAGE.release.md',source/'GUI_USAGE.md')
     shutil.copy2(ROOT/'packaging/README.release.md',source/'README.md')
     (source/'.env.example').write_text('# Optional; paid calls are disabled by default.\nDEEPSEEK_API_KEY=\n',encoding='utf-8')
     (source/'.gitignore').write_text('.venv/\nruntime/\nruns/\n.env*\n!.env.example\n__pycache__/\n*.pyc\ntools/scrcpy*/\ntools/platform-tools/\ntools/downloads/\npackaging_cache/\ndist/\nthird_party/sources/\n*.key\nadbkey*\n',encoding='utf-8')

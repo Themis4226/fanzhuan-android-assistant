@@ -37,7 +37,7 @@ def dashboard(view):
     result = {}
     used = set()
     for category in CATEGORIES:
-        labels = [e for e in view['elements'] if e['text'] == category and e.get('confidence', 0) >= .85]
+        labels = [e for e in view['elements'] if e['text'] == category and e.get('confidence', 0) >= .75]
         if len(labels) != 1:
             raise RuntimeError('首页分类缺失或重复：' + category)
         x, y = labels[0]['center']
@@ -50,6 +50,11 @@ def dashboard(view):
         n, total = map(int, re.findall(r'\d+', e['text']))
         if not 0 <= n <= total <= 100:
             raise RuntimeError('首页完成数不合法。')
+        # A dim, unused category can have a weaker label while its 0/0 count
+        # remains clear. It will never become a tap target. Positive categories
+        # retain the original label threshold; aggregate/unique-count checks stay.
+        if labels[0].get('confidence',0)<.85 and ((n,total)!=(0,0) or e.get('confidence',0)<.95):
+            raise RuntimeError('首页分类文字不清晰：'+category)
         result[category] = {'done': n, 'total': total, 'center': labels[0]['center']}
     if len(used) != len(counters):
         raise RuntimeError('首页有尚未适配的分类，拒绝遗漏任务。')
@@ -61,11 +66,12 @@ def dashboard(view):
     return result
 
 
-def next_category(progress):
+def next_category(progress,allowed=SUPPORTED):
     unsupported = [k for k, v in progress.items() if k not in SUPPORTED and v['done'] < v['total']]
+    if tuple(allowed)!=SUPPORTED:unsupported=[]
     if unsupported:
         raise RuntimeError('以下任务尚未适配，已暂停：' + '、'.join(unsupported))
-    return next((k for k in SUPPORTED if progress[k]['done'] < progress[k]['total']), None)
+    return next((k for k in allowed if progress[k]['done'] < progress[k]['total']), None)
 
 
 def verify_progress(before, after, category):
@@ -154,7 +160,7 @@ def page_counter(view):
     return (n, total) if 1 <= n <= total <= 50 else None
 
 
-def entered_card(view, target):
+def entered_card(view, target, expected_header=None):
     counter = page_counter(view)
     if counter is None or counter[1] != target['pages']:
         return False
@@ -162,6 +168,8 @@ def entered_card(view, target):
         title = canonical(header(view)['text'])
     except RuntimeError:
         return False
+    if expected_header is not None:
+        return title==canonical(expected_header)
     preview = canonical(target['title'])
     card = re.fullmatch(r'卡包0*(\d+)', preview)
     if card:

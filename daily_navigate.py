@@ -6,7 +6,7 @@ from pathlib import Path
 from phone_capture import ROOT, Adb, RunLog, find_adb, parse_devices, timestamp
 from assistant_step import fresh_capture, require_wechat
 from ocr_view import load_engine, observe
-from daily_privacy import assert_no_notification
+from daily_privacy import notification_free_frame
 
 def main():
     p=argparse.ArgumentParser()
@@ -33,10 +33,10 @@ def main():
     selector=adb.selector(adb.select_usb(parse_devices(adb.text('devices','-l')),auth.get('serial')))
     engine=load_engine(); engine.use_cls=False
     def read():
-        require_wechat(adb,selector)
-        raw=fresh_capture(adb,selector)
-        view=observe(raw,engine=engine,live=True)
-        assert_no_notification(view)
+        def capture():
+            require_wechat(adb,selector)
+            return fresh_capture(adb,selector)
+        raw,view=notification_free_frame(capture,lambda data:observe(data,engine=engine,live=True),adb.log)
         (folder/'latest.png').write_bytes(raw)
         (folder/'latest.json').write_text(json.dumps(view,ensure_ascii=False,indent=2),encoding='utf-8')
         return raw,view

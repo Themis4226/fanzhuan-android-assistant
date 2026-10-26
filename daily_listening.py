@@ -8,8 +8,55 @@ from phone_capture import ROOT,Adb,RunLog,find_adb,parse_devices
 from assistant_step import fresh_capture,require_wechat
 from ocr_view import load_engine,observe
 from daily_words import canonical
-from daily_privacy import assert_no_notification
+from daily_privacy import notification_free_frame
 from fast_observer import ExactFrameObserver
+from daily_navigation import card_completed
+
+
+def completed(view):
+    return card_completed(view)
+
+def intro_confirm(view):
+    """Recognize only the observed playback-help dialog, never a generic confirm."""
+    elements=[e for e in view['elements'] if e.get('confidence',0)>=.9]
+    titles=[e for e in view['elements'] if e['text']=='温馨提示']
+    if not titles:return None
+    if len(titles)!=1 or titles[0].get('confidence',0)<.85:
+        raise RuntimeError('听力提示标题不清晰，保留页面。')
+    lines=sorted((e for e in elements if view['height']*.40<e['center'][1]<view['height']*.55),
+                 key=lambda e:(e['center'][1],e['center'][0]))
+    body=re.sub(r'\s+','',''.join(e['text'] for e in lines))
+    if not all(marker in body for marker in ('当听力无法播放时','检查网络是否通畅','删除小程序重新打开')):
+        raise RuntimeError('未知听力弹窗，保留页面。')
+    buttons=[e for e in elements if e['text']=='确认' and view['height']*.55<e['center'][1]<view['height']*.70]
+    if len(buttons)!=1:raise RuntimeError('听力说明确认按钮不唯一。')
+    return buttons[0]['center']
+
+
+def page_counter(view):
+    results=[e for e in view['elements'] if re.fullmatch(r'\d+/\d+',e['text'])
+             and e.get('confidence',1)>=.85 and e['center'][1]>view['height']*.9]
+    if len(results)!=1:raise RuntimeError('Listening page counter ambiguous')
+    n,total=map(int,results[0]['text'].split('/'))
+    if not 1<=n<=total<=30:raise RuntimeError('Listening page counter outside supported range')
+    return results[0]
+
+
+def dismiss_intro(view,read,tap,log):
+    button=intro_confirm(view)
+    if button is None:return view
+    current=read()
+    if intro_confirm(current)!=button or page_counter(current)['text']!=page_counter(view)['text']:
+        raise RuntimeError('听力说明弹窗在确认前发生变化。')
+    tap(button)
+    log.event('daily_listening_intro_dismissed',page=page_counter(view)['text'],api_calls=0)
+    # Only reread; never repeat the confirmation if the network/UI is slow.
+    for _ in range(4):
+        time.sleep(.35);after=read()
+        if completed(after) or page_counter(after)['text']!=page_counter(view)['text']:
+            raise RuntimeError('关闭听力说明时页面意外改变。')
+        if intro_confirm(after) is None:return after
+    raise RuntimeError('听力说明弹窗未关闭，不重复点击。')
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--header',required=True);p.add_argument('--count',type=int,default=20)
@@ -22,18 +69,21 @@ def main():
     engine=load_engine();engine.use_cls=False
     observer=ExactFrameObserver(engine,observe,log=adb.log,enabled=not a.no_ocr_cache)
     last_raw=None
-    def completed(v):return any('当前卡包已完成' in e['text'] or '任务已完成' in e['text'] for e in v['elements'])
-    def read():
+    def read_raw():
         nonlocal last_raw
-        require_wechat(adb,s);last_raw=fresh_capture(adb,s);v=observer(last_raw,live=True)
-        assert_no_notification(v)
+        def capture():
+            require_wechat(adb,s)
+            return fresh_capture(adb,s)
+        last_raw,v=notification_free_frame(capture,lambda data:observer(data,live=True),adb.log)
         (folder/'latest.png').write_bytes(last_raw);(folder/'latest.json').write_text(json.dumps(v,ensure_ascii=False,indent=2),encoding='utf-8')
         if not completed(v) and not any(canonical(e['text'])==canonical(a.header) and e['center'][1]<260 for e in v['elements']):raise RuntimeError('Listening header changed')
         return v
-    def counter(v):
-        results=[e for e in v['elements'] if re.fullmatch(r'\d+/\d+',e['text']) and e['center'][1]>v['height']*.9]
-        if len(results)!=1:raise RuntimeError('Listening page counter ambiguous')
-        return results[0]
+    def tap(center):
+        require_wechat(adb,s)
+        adb.run(*s,'shell','input','tap',*(str(c) for c in center))
+    def read():
+        return dismiss_intro(read_raw(),read_raw,tap,adb.log)
+    counter=page_counter
     def play_count(v):
         results=[re.fullmatch(r'已播放第?(\d+)遍',e['text']) for e in v['elements']]
         counts=[int(m.group(1)) for m in results if m]

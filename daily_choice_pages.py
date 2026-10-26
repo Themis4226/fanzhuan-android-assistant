@@ -8,7 +8,7 @@ from phone_capture import ROOT, Adb, RunLog, find_adb, parse_devices
 from assistant_step import fresh_capture, require_wechat
 from ocr_view import load_engine, observe, decode_image
 from daily_words import canonical
-from daily_privacy import assert_no_notification
+from daily_privacy import notification_free_frame
 from fast_observer import ExactFrameObserver
 
 
@@ -22,6 +22,30 @@ def study_video_page(view, title):
     repeated=any(canonical(e['text'])==canonical(title) and e.get('confidence',0)>=.9
                  and view['height']*.20<e['center'][1]<view['height']*.60 for e in texts)
     return duration and logo and repeated
+
+
+def grammar_legend_page(view,title):
+    texts={e['text'] for e in view['elements'] if e.get('confidence',0)>=.9}
+    return (bool(re.fullmatch(r'长难句\d+[-—–]\d+',title))
+            and {'长难句解析','主干','修饰语','引导词','1/6'}.issubset(texts))
+
+
+def grammar_analysis_page(view,title):
+    if not re.fullmatch(r'长难句\d+[-—–]\d+',title):return False
+    texts={canonical(e['text']) for e in view['elements'] if e.get('confidence',0)>=.9}
+    markers={'成分解读','重点词汇','涉及的知识点','句子结构','原句','参考译文'}
+    counters=[re.fullmatch(r'([2-6])/6',e['text']) for e in view['elements']
+              if e['center'][1]>view['height']*.9]
+    return len(texts & markers)>=2 and sum(m is not None for m in counters)==1
+
+
+def information_kind(view,title,allow_info,skip_study):
+    if allow_info and any('先看题目' in e['text'] for e in view['elements']):return 'question_preview'
+    if skip_study:
+        if grammar_legend_page(view,title):return 'grammar_legend'
+        if grammar_analysis_page(view,title):return 'grammar_analysis'
+        if study_video_page(view,title):return 'video_lesson'
+    return None
 
 
 def main():
@@ -44,9 +68,10 @@ def main():
     engine=load_engine(); engine.use_cls=False
     observer=ExactFrameObserver(engine,observe,log=adb.log,enabled=not a.no_ocr_cache)
     def read():
-        require_wechat(adb,s)
-        raw=fresh_capture(adb,s); v=observer(raw,live=True)
-        assert_no_notification(v)
+        def capture():
+            require_wechat(adb,s)
+            return fresh_capture(adb,s)
+        raw,v=notification_free_frame(capture,lambda data:observer(data,live=True),adb.log)
         (folder/'latest.png').write_bytes(raw)
         (folder/'latest.json').write_text(json.dumps(v,ensure_ascii=False,indent=2),encoding='utf-8')
         if not any(canonical(e['text'])==canonical(a.header) and e['bounds'][1]<260 for e in v['elements']):
@@ -63,22 +88,8 @@ def main():
         counter=counters[0]; n,total=map(int,counter['text'].split('/'))
         choices=[e for e in v['elements'] if e['text']=='A' and e['confidence']>=.85
                  and e['center'][0]<v['width']*.15 and 280<e['center'][1]<v['height']*.9]
-        skip_info=a.allow_info_and_scroll and any('先看题目' in e['text'] for e in v['elements'])
-        skip_video=a.skip_study and study_video_page(v,a.header)
-        if not choices and (skip_info or skip_video):
-            require_wechat(adb,s)
-            adb.run(*s,'shell','input','tap',str(round(v['width']*.925)),str(counter['center'][1]))
-            time.sleep(.6)
-            next_raw,next_view=read()
-            done=any('卡包已完成' in e['text'] for e in next_view['elements'])
-            if not done and not any(e['text']==f'{n+1}/{total}' for e in next_view['elements']):
-                raise RuntimeError('Information page did not advance')
-            adb.log.event('authorized_info_page_skipped',header=a.header,page=counter['text'],
-                          kind='video_lesson' if skip_video else 'question_preview',api_calls=0)
-            print(json.dumps({'info_page_skipped':counter['text'],'api_calls':0},ensure_ascii=False),flush=True)
-            raw,v=next_raw,next_view
-            continue
-        if not choices and a.allow_info_and_scroll:
+        kind=information_kind(v,a.header,a.allow_info_and_scroll,a.skip_study)
+        if not choices and not kind and a.allow_info_and_scroll:
             for attempt in range(8):
                 require_wechat(adb,s)
                 adb.run(*s,'shell','input','swipe',str(v['width']//2),str(round(v['height']*.75)),str(v['width']//2),str(round(v['height']*.30)),'600')
@@ -87,7 +98,21 @@ def main():
                 if not any(e['text']==counter['text'] for e in v['elements']):raise RuntimeError('Page changed during scroll')
                 choices=[e for e in v['elements'] if e['text']=='A' and e['confidence']>=.85
                          and e['center'][0]<v['width']*.15 and 280<e['center'][1]<v['height']*.9]
-                if choices:break
+                kind=information_kind(v,a.header,a.allow_info_and_scroll,a.skip_study)
+                if choices or kind:break
+        if not choices and kind:
+            require_wechat(adb,s)
+            adb.run(*s,'shell','input','tap',str(round(v['width']*.925)),str(counter['center'][1]))
+            time.sleep(.6)
+            next_raw,next_view=read()
+            done=any('卡包已完成' in e['text'] for e in next_view['elements'])
+            if not done and not any(e['text']==f'{n+1}/{total}' for e in next_view['elements']):
+                raise RuntimeError('Information page did not advance')
+            adb.log.event('authorized_info_page_skipped',header=a.header,page=counter['text'],
+                          kind=kind,api_calls=0)
+            print(json.dumps({'info_page_skipped':counter['text'],'api_calls':0},ensure_ascii=False),flush=True)
+            raw,v=next_raw,next_view
+            continue
         if len(choices)!=1: raise RuntimeError('First option not clearly visible; inspect page')
         target=choices[0]
         require_wechat(adb,s)

@@ -1,6 +1,7 @@
 """Bounded word-card chain: complete -> list -> next pending card -> dashboard."""
 import argparse
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -9,8 +10,9 @@ from phone_capture import ROOT,Adb,RunLog,find_adb,parse_devices
 from assistant_step import require_wechat,fresh_capture
 from ocr_view import load_engine,observe
 from fast_observer import ExactFrameObserver
-from daily_privacy import assert_no_notification
+from daily_privacy import notification_free_frame
 from daily_words import question_signature
+from spelling_navigation import spelling_entry,spelling_page,open_spelling,finish_spelling
 from word_navigation import (active_card_id,is_completion,is_word_list,return_to_word_list,
                              open_pending_card,task_tiles,return_to_dashboard,dashboard_word_progress,
                              is_active_card,return_active_to_list,canonical)
@@ -22,9 +24,18 @@ def card_header(view):
 
 
 def resume_matches(prior,view):
-    return (prior.get('status')=='paused' and type(prior.get('resume_card_id')) is int
-            and prior.get('resume_signature')==question_signature(view)
-            and prior.get('resume_header')==card_header(view) and bool(card_header(view)))
+    current=card_header(view);previous=prior.get('resume_header',[])
+    if not (prior.get('status')=='paused' and type(prior.get('resume_card_id')) is int
+            and prior.get('resume_signature')==question_signature(view) and current):return False
+    if previous==current:return True
+    if len(previous)!=1 or len(current)!=1:return False
+    before=re.fullmatch(r'(.*卡包)(\d*)',previous[0]);after=re.fullmatch(r'(.*卡包)(\d*)',current[0])
+    if not before or not after or before.group(1)!=after.group(1):return False
+    expected=str(prior['resume_card_id'])
+    if any(m.group(2) and not expected.startswith(str(int(m.group(2)))) for m in (before,after)):return False
+    headers=[e for e in view['elements'] if '卡包' in e['text'] and e['center'][1]<view['height']*.12]
+    return (len(headers)==1 and headers[0]['confidence']>=.9
+            and headers[0]['bounds'][2]>=view['width']*.70)
 
 
 def run_card_worker(command,cwd):
@@ -37,6 +48,36 @@ def run_card_worker(command,cwd):
             print(line,end='',flush=True)
             if line.strip():last_line=line.strip()
         return process.wait(),last_line
+
+
+def run_spelling_task(view,read,get_raw,tap,adb,selector,folder,log):
+    """Share the chain's USB/OCR runtime across the entire spelling task."""
+    from daily_spell import SpellingRuntime
+    from spelling_batch import run_batch
+    from daily_navigation import header
+    entry=spelling_entry(view)
+    if entry is not None:
+        if entry['completed']:raise RuntimeError('拼写已经完成，拒绝重复运行。')
+        view=open_spelling(entry,read,tap,log)
+        expected_header,expected_total=entry['header'],entry['total']
+    else:
+        if not spelling_page(view):raise RuntimeError('当前不是已确认的拼写页面。')
+        expected_header=header(view)['text']
+        counts=[e['text'] for e in view['elements'] if re.fullmatch(r'\d+/\d+',e['text'])
+                and e.get('confidence',0)>=.85 and view['height']*.105<e['center'][1]<view['height']*.18]
+        expected_total=int(counts[0].split('/')[1])
+    def frame():
+        current=read();return get_raw(),current
+    def guard():
+        auth=json.loads((folder/'authorization.json').read_text(encoding='utf-8'))
+        if auth.get('status')!='active' or not auth.get('automatic_answers'):
+            raise RuntimeError('拼写自动答题授权已结束。')
+        require_wechat(adb,selector)
+    runtime=SpellingRuntime(adb,selector,frame,guard)
+    print('开始单词拼写：'+expected_header+'；复用本次OCR与原有调用额度。',flush=True)
+    _,after,state=run_batch(runtime,folder,root=ROOT,count=30,
+                            expected_header=expected_header,expected_total=expected_total)
+    return finish_spelling(after,state,read,tap,log)
 
 
 def main(argv=None):
@@ -55,7 +96,10 @@ def main(argv=None):
     raw=None
     def read():
         nonlocal raw
-        require_wechat(adb,selector);raw=fresh_capture(adb,selector);v=observer(raw,live=True);assert_no_notification(v)
+        def capture():
+            require_wechat(adb,selector)
+            return fresh_capture(adb,selector)
+        raw,v=notification_free_frame(capture,lambda data:observer(data,live=True),log)
         (folder/'latest.png').write_bytes(raw)
         (folder/'latest.json').write_text(json.dumps(v,ensure_ascii=False,indent=2),encoding='utf-8')
         return v
@@ -78,15 +122,33 @@ def main(argv=None):
                 log.event('word_paused_card_resumed',card_id=resume_id,api_calls=0)
             else:view=return_active_to_list(view,read,tap,log)
         for _ in range(a.max_cards):
+            if spelling_page(view):
+                if a.navigation_only:
+                    report['status']='already_inside_spelling_no_answers';save();return
+                report['active_task']='spelling';save()
+                view=run_spelling_task(view,read,lambda:raw,tap,adb,selector,folder,log)
+                report.update(active_task=None,spelling_completed=True);save()
+                continue
             if is_word_list(view):
                 card_id,view=open_pending_card(read,lambda:raw,tap,log,attempted)
                 if card_id is None:
+                    entry=spelling_entry(view)
+                    if entry is not None and not entry['completed']:
+                        if a.navigation_only:
+                            view=open_spelling(entry,read,tap,log)
+                            report['status']='pending_spelling_opened_no_answers';save();return
+                        report['active_task']='spelling';save()
+                        view=run_spelling_task(view,read,lambda:raw,tap,adb,selector,folder,log)
+                        report.update(active_task=None,spelling_completed=True);save()
+                        continue
                     view=return_to_dashboard(view,read,tap,log)
                     progress=dashboard_word_progress(view)
                     report['word_progress']=progress
                     report['status']=('word_tasks_completed_returned_to_dashboard' if progress and progress[0]==progress[1]
                                       else 'returned_to_dashboard_remaining_word_tasks_need_review')
                     save()
+                    if not progress or progress[0]!=progress[1]:
+                        raise RuntimeError('可见卡包与拼写已检查，但首页单词进度未满；可能有不可见或新布局任务，保留记录。')
                     print(json.dumps(report,ensure_ascii=False),flush=True);return
                 report['opened_cards'].append(card_id);save()
                 if a.navigation_only:

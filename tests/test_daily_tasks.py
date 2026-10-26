@@ -10,8 +10,9 @@ from unittest.mock import Mock, patch
 from PIL import Image, ImageDraw
 
 import daily_navigation as nav
-from daily_tasks import DailyCoordinator, bind_choice_header
-from daily_choice_pages import study_video_page
+from daily_tasks import DailyCoordinator, bind_choice_header,load_entry_headers,listening_resume_target
+from datetime import date
+from daily_choice_pages import study_video_page,grammar_legend_page,grammar_analysis_page,information_kind
 
 
 def el(text,x,y):
@@ -88,6 +89,17 @@ class FakePhone:
 
 
 class DailyNavigationTests(unittest.TestCase):
+    def test_course_catalog_is_shared_but_current_review_takes_precedence(self):
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp);folder=root/'runs/new_phone';folder.mkdir(parents=True)
+            observed={'source':'observed_ui','category':'听力','pages':9,'header':'Synthetic listening'}
+            (root/'course_catalog.json').write_text(json.dumps({'schema_version':1,'entries':{'synthetic':observed}}),encoding='utf-8')
+            self.assertEqual(load_entry_headers(root,folder),{'synthetic':observed})
+            current=dict(observed,source='assistant_review',header='Freshly reviewed')
+            (folder/'reviewed_course_entries.json').write_text(json.dumps({'synthetic':current}),encoding='utf-8')
+            self.assertEqual(load_entry_headers(root,folder),{'synthetic':current})
+            self.assertFalse((folder/'latest.png').exists())
+
     def test_counts_bound_to_categories_and_complete_categories_skipped(self):
         progress=nav.dashboard(dash())
         self.assertEqual([progress['单词']['done'],progress['单词']['total']],[2,2])
@@ -104,6 +116,16 @@ class DailyNavigationTests(unittest.TestCase):
             else:next(e for e in v['elements'] if e['text']=='3/6')['text']='4/6'
             with self.subTest(case=mutation),self.assertRaises(RuntimeError):nav.dashboard(v)
 
+    def test_dim_zero_task_label_never_allows_an_uncertain_positive_target(self):
+        v=dash();label=next(e for e in v['elements'] if e['text']=='口语');label['confidence']=.7933
+        self.assertEqual(nav.dashboard(v)['口语']['total'],0)
+        for done,total,score in ((0,1,.99),(1,1,.99),(0,0,.9)):
+            positive=dash(totals={'单词':2,'语法':2,'阅读':1,'听力':1,'口语':total},
+                          done={'单词':2,'语法':1,'阅读':0,'听力':0,'口语':done})
+            next(e for e in positive['elements'] if e['text']=='口语')['confidence']=.7933
+            next(e for e in positive['elements'] if e['text']==f'已完成{done}/{total}' and e['center'][1]>1500)['confidence']=score
+            with self.subTest(done=done,total=total,score=score),self.assertRaises(RuntimeError):nav.dashboard(positive)
+
     def test_gray_tiles_and_completion_ribbons_at_two_sizes(self):
         for category in TITLES:
             for size in ((1080,2400),(720,1600)):
@@ -118,6 +140,29 @@ class DailyNavigationTests(unittest.TestCase):
         self.assertFalse(nav.entered_card(view('其他阅读卡包01',[el('1/8',770,2320)]),target))
         self.assertFalse(nav.entered_card(view('中级阅读A卡包01',[el('1/9',770,2320)]),target))
         self.assertFalse(nav.entered_card(view('中级阅读A卡包02',[el('1/8',770,2320)]),target))
+
+    def test_reviewed_header_alias_still_requires_exact_header_and_page_count(self):
+        target={'title':'卡包10','course':'四级长难句B','pages':6}
+        inside=view('长难句46-50',[el('1/6',770,2230)])
+        self.assertFalse(nav.entered_card(inside,target))
+        self.assertTrue(nav.entered_card(inside,target,'长难句46-50'))
+        self.assertFalse(nav.entered_card(view('长难句41-45',[el('1/6',770,2230)]),target,'长难句46-50'))
+        self.assertFalse(nav.entered_card(view('长难句46-50',[el('1/7',770,2230)]),target,'长难句46-50'))
+
+    def test_grammar_legend_skip_requires_the_observed_instruction_markers(self):
+        v=view('长难句46-50',[el(t,500,500+i*200) for i,t in enumerate(['长难句解析','主干','修饰语','引导词'])]+[el('1/6',770,2230)])
+        self.assertTrue(grammar_legend_page(v,'长难句46-50'))
+        v['elements'].pop(2)
+        self.assertFalse(grammar_legend_page(v,'长难句46-50'))
+
+    def test_observed_grammar_analysis_requires_known_title_markers_and_counter(self):
+        v=view('长难句46-50',[el('成分解读：',200,430),el('重点词汇：',200,870),el('2/6',770,2230)])
+        self.assertTrue(grammar_analysis_page(v,'长难句46-50'))
+        self.assertEqual(information_kind(v,'长难句46-50',True,True),'grammar_analysis')
+        self.assertIsNone(information_kind(v,'长难句46-50',True,False))
+        self.assertFalse(grammar_analysis_page(v,'未知课程'))
+        v['elements'][-1]['text']='2/7'
+        self.assertFalse(grammar_analysis_page(v,'长难句46-50'))
 
     def test_no_progress_and_other_category_change_are_not_completion(self):
         before=nav.dashboard(dash())
@@ -142,6 +187,37 @@ class DailyNavigationTests(unittest.TestCase):
 
 
 class DailyCoordinatorTests(unittest.TestCase):
+    def test_inventoried_listening_page_resumes_then_verifies_list_and_dashboard(self):
+        phone=FakePhone({'单词':2,'语法':2,'阅读':1,'听力':0});phone.category='听力';phone.state='active'
+        raw,menu_view=menu('听力');target=dict(nav.course_tiles(raw,menu_view,'听力')[0],category='听力')
+        entry={'source':'observed_ui','category':'听力','pages':8,'header':TITLES['听力'][2]}
+        previous={'status':'paused','date':date.today().isoformat(),'active_category':'听力',
+                  'active_target':target,'progress':nav.dashboard(dash(phone.done))}
+        def read():
+            v=phone.read()
+            if phone.state=='active':v['elements'].append(el('已播放0遍',292,2075))
+            return v
+        coordinator=DailyCoordinator(read,lambda:phone.raw,phone.tap,phone.worker,Mock(),Mock(),Mock(),
+                                     entry_headers={target['key']:entry},resume_checkpoint=previous)
+        with patch('word_navigation.time.sleep'),redirect_stdout(StringIO()):coordinator.run()
+        self.assertEqual(coordinator.report['status'],'all_daily_tasks_verified')
+        self.assertEqual(len(phone.workers),1);self.assertEqual(phone.workers[0][0],'daily_listening.py')
+        self.assertEqual(phone.done['听力'],1)
+
+    def test_listening_resume_rejects_stale_checkpoint_or_wrong_title_and_pages(self):
+        raw,v=menu('听力');target=dict(nav.course_tiles(raw,v,'听力')[0],category='听力')
+        entry={'source':'observed_ui','category':'听力','pages':8,'header':TITLES['听力'][2]}
+        current=view(entry['header'],[el('1/8',767,2200),el('已播放0遍',292,2075)])
+        prior={'status':'paused','date':date.today().isoformat(),'active_category':'听力',
+               'active_target':target,'progress':{'听力':{'done':0,'total':1}}}
+        entries={target['key']:entry}
+        self.assertIsNotNone(listening_resume_target(prior,current,entries))
+        for changed in (dict(prior,date='2000-01-01'),dict(prior,status='resolved'),dict(prior,active_target=None)):
+            self.assertIsNone(listening_resume_target(changed,current,entries))
+        self.assertIsNone(listening_resume_target(prior,current,{}))
+        self.assertIsNone(listening_resume_target(prior,view('另一听力课程',[el('1/8',767,2200)]),entries))
+        self.assertIsNone(listening_resume_target(prior,current,{target['key']:dict(entry,pages=9)}))
+
     def coordinator(self,phone):
         self.reports=[];self.authorize=Mock()
         return DailyCoordinator(phone.read,lambda:phone.raw,phone.tap,phone.worker,self.authorize,Mock(),
@@ -156,6 +232,26 @@ class DailyCoordinatorTests(unittest.TestCase):
         self.assertEqual(len(phone.workers),3)
         self.assertEqual([a.args[0] for a in self.authorize.call_args_list],['语法','阅读'])
         self.assertIn('--skip-study',phone.workers[0]);self.assertNotIn('--skip-study',phone.workers[2])
+
+    def test_selected_other_subjects_do_not_retry_or_claim_remaining_words_complete(self):
+        phone=FakePhone({'单词':1,'语法':1,'阅读':0,'听力':0});coordinator=self.coordinator(phone)
+        coordinator.categories=('语法','阅读','听力')
+        with patch('word_navigation.time.sleep'),redirect_stdout(StringIO()):coordinator.run()
+        self.assertEqual(coordinator.report['status'],'selected_categories_verified')
+        self.assertEqual(coordinator.report['remaining_categories'],['单词'])
+        self.assertEqual(phone.done['单词'],1)
+        self.assertFalse(any(args[0]=='daily_word_tasks.py' for args in phone.workers))
+
+    def test_shared_course_entry_runs_in_a_fresh_session_without_old_phone_progress(self):
+        phone=FakePhone();coordinator=self.coordinator(phone);coordinator.categories=('语法',)
+        coordinator.entry_headers={'语法|四级长难句b|卡包10':{
+            'source':'observed_ui','category':'语法','pages':6,'header':'长难句46-50'}}
+        with patch.dict(TITLES,{'语法':('卡包10','四级长难句B','长难句46-50',6)}),\
+             patch('word_navigation.time.sleep'),redirect_stdout(StringIO()):coordinator.run()
+        self.assertEqual(len(phone.workers),1)
+        self.assertIn('长难句46-50',phone.workers[0])
+        self.assertEqual(coordinator.report['status'],'selected_categories_verified')
+        self.assertEqual(phone.done['语法'],2)
 
     def test_word_worker_returns_dashboard_before_cross_category_dispatch(self):
         phone=FakePhone({'单词':1,'语法':2,'阅读':1,'听力':1})
@@ -180,6 +276,27 @@ class DailyCoordinatorTests(unittest.TestCase):
         phone=FakePhone();phone.state='active';phone.category='听力';coordinator=self.coordinator(phone)
         with self.assertRaises(RuntimeError):coordinator.run()
         self.assertEqual(phone.taps,[]);self.assertEqual(phone.workers,[])
+
+    def test_matching_paused_word_checkpoint_resumes_before_dashboard_dispatch(self):
+        phone=FakePhone({'单词':1,'语法':2,'阅读':1,'听力':1})
+        # A known pause can resume; an unrelated detail cannot reach the worker.
+        original=phone.read
+        phone.state='paused-word'
+        def read():
+            if phone.state=='paused-word':
+                return view('Synthetic word card',[el('学习3/25',90,305)])
+            return original()
+        phone.read=read;coordinator=self.coordinator(phone)
+        coordinator.resume_word=lambda v: nav.has_header(v,'Synthetic word card')
+        with patch('word_navigation.time.sleep'),redirect_stdout(StringIO()):coordinator.run()
+        self.assertEqual(phone.workers[0][0],'daily_word_tasks.py')
+        self.assertEqual(coordinator.report['status'],'all_daily_tasks_verified')
+
+    def test_mismatched_word_checkpoint_does_not_start_worker(self):
+        phone=FakePhone();phone.state='active';phone.category='听力';coordinator=self.coordinator(phone)
+        coordinator.resume_word=lambda v:False
+        with self.assertRaises(RuntimeError):coordinator.run()
+        self.assertEqual(phone.workers,[]);self.assertEqual(phone.taps,[])
 
     def test_task_limit_pauses_after_verified_completed_card(self):
         phone=FakePhone();coordinator=self.coordinator(phone)

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "note": "Observed course entry names only; no device identity, account data, progress, authorization or answer records.",
+  "entries": {
+    "语法|四级长难句b|卡包10": {
+      "source": "observed_ui",
+      "category": "语法",
+      "pages": 6,
+      "header": "长难句46-50"
+    },
+    "听力|四级听力篇章f|卡包7": {
+      "source": "observed_ui",
+      "category": "听力",
+      "pages": 12,
+      "header": "2023年12月第一篇"
+    },
+    "阅读|四级阅读e|卡包08": {
+      "source": "observed_ui",
+      "category": "阅读",
+      "pages": 11,
+      "header": "2020年12月第二套（1）"
+    },
+    "听力|四级听力短篇新闻g|卡包09": {
+      "source": "observed_ui",
+      "category": "听力",
+      "pages": 9,
+      "header": "2024年12月第三篇"
+    },
+    "听力|四级听力短篇新闻g|卡包10": {
+      "source": "observed_ui",
+      "category": "听力",
+      "pages": 11,
+      "header": "2024年12月第四篇"
+    }
+  }
+}

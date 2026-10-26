@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from daily_privacy import assert_no_notification
-from daily_spell import type_letters
+from daily_spell import type_letters,type_word,clear_rejected_case,input_letters,shift_center
 import daily_words
 import daily_choice_pages
 import daily_listening
@@ -56,6 +56,54 @@ class ExactFrameTests(unittest.TestCase):
 
 
 class SpellingTransportTests(unittest.TestCase):
+    def test_initial_capital_verifies_shift_first_letter_and_lowercase_rest(self):
+        def keyboard(case,typed=''):
+            letters='qwertyasdfgzxcv';letters=letters.upper() if case=='upper' else letters
+            elements=[{'text':c,'center':[100+i*40,1740],'confidence':.99} for i,c in enumerate(letters)]
+            if typed:elements.append({'text':typed,'center':[190,864],'confidence':.99})
+            return {'width':1080,'height':2373,'elements':elements}
+        centers={c:(100+i*40,1740) for i,c in enumerate('facebook')};centers['shift']=(84,2046)
+        for auto_lower in (False,True):
+            adb=Mock();views=[keyboard('upper'),keyboard('lower' if auto_lower else 'upper','F')]
+            if not auto_lower:views.append(keyboard('lower','F'))
+            with patch('daily_spell.time.sleep'):
+                type_word(adb,('-t','1'),'Facebook',centers,1080,2373,read=Mock(side_effect=views),
+                          initial_view=keyboard('lower'),guard=Mock())
+            self.assertEqual(adb.run.call_count,3 if auto_lower else 4)
+            self.assertEqual(adb.run.call_args_list[0].args[-2:],('84','2046'))
+            self.assertNotIn('confirm',adb.run.call_args.args[-1])
+        for word in ('F;reboot','F acebook','FACEBOOK','Facebook\n'):
+            adb=Mock()
+            with self.assertRaises(ValueError):type_word(adb,('-t','1'),word,{},1080,2373)
+            adb.run.assert_not_called()
+
+    def test_capital_input_never_types_when_shift_does_not_change_keyboard(self):
+        def keyboard():return {'width':1080,'height':2373,'elements':[
+            {'text':c,'center':[100+i*40,1740],'confidence':.99} for i,c in enumerate('qwerty')]}
+        centers={c:(100+i*40,1740) for i,c in enumerate('facebook')};centers['shift']=(84,2046);adb=Mock()
+        with patch('daily_spell.time.sleep'),self.assertRaisesRegex(RuntimeError,'Shift did not'):
+            type_word(adb,('-t','1'),'Facebook',centers,1080,2373,read=keyboard,initial_view=keyboard(),guard=Mock())
+        self.assertEqual(adb.run.call_count,1)
+
+    def test_shift_key_requires_a_unique_observed_gray_boundary(self):
+        image=np.full((2373,1080,3),255,dtype=np.uint8);image[1979:2114,12:156]=[187,175,168]
+        self.assertEqual(shift_center(image),(84,2046))
+        image[:]=255
+        with self.assertRaises(RuntimeError):shift_center(image)
+
+    def test_rejected_case_clear_requires_the_exact_hint_and_existing_input(self):
+        def element(text,x,y):return {'text':text,'center':[x,y],'confidence':.99}
+        v={'width':1080,'height':2373,'elements':[element(c,190+i*100,870) for i,c in enumerate('faCebOO')]
+           +[element('k',190,1026),element('提示 Facebook',272,1144),element('X',1003,2043)]}
+        self.assertEqual(input_letters(v).lower(),'facebook')
+        adb=Mock();clear_rejected_case(adb,('-t','1'),v,'Facebook')
+        self.assertEqual(adb.run.call_args.args[-1].count('input tap 1003 2043'),8)
+        for bad in (dict(v,elements=v['elements'][:-1]),dict(v,elements=v['elements'][1:]),
+                    dict(v,elements=[e for e in v['elements'] if not e['text'].startswith('提示')])):
+            adb=Mock()
+            with self.assertRaises(RuntimeError):clear_rejected_case(adb,('-t','1'),bad,'Facebook')
+            adb.run.assert_not_called()
+
     def test_one_round_trip_contains_letters_only_and_stops_on_failure(self):
         adb=Mock()
         type_letters(adb,('-t','1'),'cat',{'c':(30,70),'a':(10,60),'t':(50,50)},100,100)

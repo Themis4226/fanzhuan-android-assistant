@@ -46,7 +46,7 @@ class DesktopSessionTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):desktop_helper.status(root)
 
     def test_closed_session_blocks_every_task_before_adb_or_model(self):
-        cases=[('daily_tasks',[]),('daily_words',[]),('daily_word_tasks',[]),('daily_listening',['--header','Practice']),
+        cases=[('device_start',['--','daily_tasks.py']),('daily_tasks',[]),('daily_words',[]),('daily_word_tasks',[]),('daily_listening',['--header','Practice']),
                ('daily_choice_pages',['--header','Practice']),('daily_spell',['--word','cat','--clue','猫','--progress','1/25']),
                ('daily_suggest',[]),('daily_navigate',['--tap','完成']),('daily_navigate',['--close-completion'])]
         for name,args in cases:
@@ -65,6 +65,15 @@ class DesktopSessionTests(unittest.TestCase):
                 cls.return_value.select_usb.return_value={'serial':'NEW_TEST_USB'};session_init.main()
             self.assertNotEqual(str(folder),(root/'runs/active_daily_session.txt').read_text(encoding='utf-8'))
             self.assertEqual(json.loads((folder/'authorization.json').read_text(encoding='utf-8'))['status'],'closed')
+
+    def test_completion_keeps_replacement_available_but_closure_revokes_it(self):
+        with TemporaryDirectory() as tmp:
+            root,folder=self.prepare(tmp);path=folder/'authorization.json'
+            a=json.loads(path.read_text(encoding='utf-8'));a['status']='completed'
+            path.write_text(json.dumps(a),encoding='utf-8')
+            self.assertTrue(desktop_helper.status(root)['can_switch_device'])
+            a['status']='closed';path.write_text(json.dumps(a),encoding='utf-8')
+            self.assertFalse(desktop_helper.status(root)['can_switch_device'])
 
 
 if __name__=='__main__':unittest.main()

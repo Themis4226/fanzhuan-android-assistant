@@ -113,6 +113,30 @@ class PendingCardTests(unittest.TestCase):
         number,_=nav.open_pending_card(Mock(return_value=v),lambda:raw,tap,Mock())
         self.assertIsNone(number);tap.assert_not_called()
 
+    def test_capsule_partial_number_is_not_treated_as_a_different_card(self):
+        raw,v=word_list(done=(6,))
+        next(e for e in v['elements'] if e['text']=='卡包7')['text']='卡包14'
+        inside=active(14);inside['elements'][0]['text']='新时代大学进阶英语1卡包1'
+        inside['elements'][0]['bounds']=[220,148,876,207]
+        self.assertIsNone(nav.active_card_id(inside))
+        with patch.object(nav.time,'sleep'):
+            number,_=nav.open_pending_card(Mock(side_effect=[v,inside]),lambda:raw,Mock(),Mock())
+        self.assertEqual(number,14)
+
+    def test_clear_wrong_number_or_inconsistent_clipped_prefix_is_rejected(self):
+        raw,v=word_list(done=(6,))
+        next(e for e in v['elements'] if e['text']=='卡包7')['text']='卡包14'
+        for bounds,text in (([400,148,600,207],'新时代大学进阶英语1卡包1'),
+                            ([220,148,876,207],'新时代大学进阶英语1卡包2')):
+            inside=active(1);inside['elements'][0].update(text=text,bounds=bounds)
+            with self.subTest(text=text,bounds=bounds),patch.object(nav.time,'sleep'),self.assertRaisesRegex(RuntimeError,'预期'):
+                nav.open_pending_card(Mock(side_effect=[v]+[inside]*4),lambda:raw,Mock(),Mock())
+
+    def test_card_entry_must_match_the_tile_word_count(self):
+        raw,v=word_list();inside=active(7);inside['elements'][1]['text']='学习0/30'
+        with patch.object(nav.time,'sleep'),self.assertRaisesRegex(RuntimeError,'预期'):
+            nav.open_pending_card(Mock(side_effect=[v]+[inside]*4),lambda:raw,Mock(),Mock())
+
     def test_dashboard_progress_belongs_to_word_category(self):
         self.assertEqual(nav.dashboard_word_progress(dashboard(1,2)),[1,2])
 
@@ -186,6 +210,17 @@ class WorkerWiringTests(unittest.TestCase):
                'resume_header':daily_word_tasks.card_header(view)}
         self.assertTrue(daily_word_tasks.resume_matches(prior,view))
         view['elements'][1]['text']='学习1/25'
+        self.assertFalse(daily_word_tasks.resume_matches(prior,view))
+
+    def test_resume_allows_capsule_to_hide_only_the_last_digit_of_same_card(self):
+        view=active(15);view['elements'][0]['text']='新时代大学进阶英语1卡包15'
+        prior={'status':'paused','resume_card_id':15,'resume_signature':daily_words.question_signature(view),
+               'resume_header':daily_word_tasks.card_header(view)}
+        view['elements'][0].update(text='新时代大学进阶英语1卡包1',bounds=[220,148,876,207])
+        self.assertTrue(daily_word_tasks.resume_matches(prior,view))
+        view['elements'][0]['bounds']=[220,148,650,207]
+        self.assertFalse(daily_word_tasks.resume_matches(prior,view))
+        view['elements'][0].update(text='新时代大学进阶英语1卡包2',bounds=[220,148,876,207])
         self.assertFalse(daily_word_tasks.resume_matches(prior,view))
         view['elements'][1]['text']='学习0/25';view['elements'][0]['text']='另一本英语课卡包.'
         self.assertFalse(daily_word_tasks.resume_matches(prior,view))
