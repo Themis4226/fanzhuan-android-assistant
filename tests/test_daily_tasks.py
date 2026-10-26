@@ -13,6 +13,7 @@ import daily_navigation as nav
 from daily_tasks import DailyCoordinator, bind_choice_header,load_entry_headers,listening_resume_target
 from datetime import date
 from daily_choice_pages import study_video_page,grammar_legend_page,grammar_analysis_page,information_kind
+from word_navigation import recognized_word_start
 
 
 def el(text,x,y):
@@ -33,6 +34,17 @@ def dash(done=None, totals=None):
     n,total=sum(done.values()),sum(totals.values())
     elements.extend([el(f'{n}/{total}',915,370),el(f'{round(n/total*100)}%',610,297)])
     return view('今日任务',elements)
+
+
+def current_word_page(width=1080,height=2373):
+    v=view('四级新增词汇卡包15.',[
+        el('学习3/25',round(width*.08),round(height*.13)),
+        el('forced',width//2,round(height*.34)),
+        el('A. n.自治市镇',width//2,round(height*.53)),
+        el('B. adj.被迫的',width//2,round(height*.60))],width,height)
+    # The capsule covers the number boundary; inventory remains the word worker's job.
+    v['elements'][0]['bounds'][2]=round(width*.81)
+    return v
 
 
 TITLES={'语法':('形容词修…','中级语法','形容词修饰名词',6),
@@ -187,6 +199,58 @@ class DailyNavigationTests(unittest.TestCase):
 
 
 class DailyCoordinatorTests(unittest.TestCase):
+    def test_new_session_resumes_recognized_word_page_without_old_checkpoint(self):
+        for width,height in ((1080,2373),(720,1600)):
+            phone=FakePhone({'单词':1,'语法':2,'阅读':1,'听力':1});phone.state='new-session-word'
+            original=phone.read
+            phone.read=lambda:current_word_page(width,height) if phone.state=='new-session-word' else original()
+            coordinator=self.coordinator(phone);coordinator.resume_word=lambda _:False
+            with redirect_stdout(StringIO()):coordinator.run()
+            self.assertEqual(coordinator.report['status'],'all_daily_tasks_verified')
+            self.assertEqual([a[0] for a in phone.workers],['daily_word_tasks.py'])
+            self.assertEqual(phone.taps,[])
+
+    def test_skip_words_can_return_from_active_word_page_without_answering(self):
+        phone=FakePhone({'单词':1,'语法':2,'阅读':1,'听力':1});phone.state='active-word'
+        original=phone.read
+        def read():
+            if phone.state=='active-word':return current_word_page()
+            if phone.state=='word-menu':return view('单词任务')
+            return original()
+        def tap(center):
+            phone.taps.append(center)
+            if phone.state=='active-word':phone.state='word-menu'
+            elif phone.state=='word-menu':phone.state='dashboard'
+            else:raise AssertionError('Unexpected input')
+        phone.read,phone.tap=read,tap
+        coordinator=self.coordinator(phone);coordinator.categories=('语法','阅读','听力')
+        with patch('word_navigation.time.sleep'),redirect_stdout(StringIO()):coordinator.run()
+        self.assertEqual(phone.workers,[]);self.assertEqual(len(phone.taps),2)
+        self.assertEqual(phone.done['单词'],1)
+        self.assertEqual(coordinator.report['status'],'selected_categories_verified')
+
+    def test_unclear_counter_or_popup_is_not_routed_as_a_new_word_session(self):
+        for kind in ('counter','popup','missing-word'):
+            v=current_word_page()
+            if kind=='counter':v['elements'][1]['confidence']=.7
+            elif kind=='popup':v['elements'].append(el('温馨提示',540,960))
+            else:v['elements']=[e for e in v['elements'] if e['text']!='forced']
+            self.assertFalse(recognized_word_start(v))
+            read=Mock(return_value=v);tap=Mock();worker=Mock()
+            coordinator=DailyCoordinator(read,Mock(),tap,worker,Mock(),Mock(),Mock(),resume_word=lambda _:False)
+            with self.assertRaisesRegex(RuntimeError,'无需新建会话'):coordinator.run()
+            tap.assert_not_called();worker.assert_not_called()
+
+    def test_existing_word_completion_can_resume_without_a_checkpoint(self):
+        phone=FakePhone({'单词':1,'语法':2,'阅读':1,'听力':1});phone.state='word-completion'
+        original=phone.read
+        phone.read=lambda:view('已确认课程卡包15',[el('COMPLETE',540,830),
+            el('恭喜你完成卡包学习!',540,960),el('完成',540,2100)]) if phone.state=='word-completion' else original()
+        coordinator=self.coordinator(phone);coordinator.resume_word=lambda _:False
+        with redirect_stdout(StringIO()):coordinator.run()
+        self.assertEqual(phone.workers[0][0],'daily_word_tasks.py')
+        self.assertEqual(coordinator.report['status'],'all_daily_tasks_verified')
+
     def test_inventoried_listening_page_resumes_then_verifies_list_and_dashboard(self):
         phone=FakePhone({'单词':2,'语法':2,'阅读':1,'听力':0});phone.category='听力';phone.state='active'
         raw,menu_view=menu('听力');target=dict(nav.course_tiles(raw,menu_view,'听力')[0],category='听力')

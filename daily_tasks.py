@@ -10,6 +10,7 @@ from assistant_step import fresh_capture, require_wechat
 from daily_privacy import notification_free_frame
 from daily_word_tasks import run_card_worker, resume_matches
 from spelling_navigation import spelling_page
+from word_navigation import recognized_word_start,is_completion as word_completion,return_active_to_list,return_to_word_list
 from fast_observer import ExactFrameObserver
 from ocr_view import load_engine, observe
 from phone_capture import ROOT, Adb, RunLog, find_adb, parse_devices
@@ -105,17 +106,27 @@ class DailyCoordinator:
                 after=nav.dashboard(view);nav.verify_progress(before,after,'听力')
                 self.report['completed'].append(dict(target,category='听力'))
                 self.record(progress=after,active_target=None)
-            if '单词' in self.categories and (spelling_page(view) or (self.resume_word is not None and self.resume_word(view))):
+            word_page=recognized_word_start(view) or word_completion(view)
+            if '单词' in self.categories and (word_page or spelling_page(view) or (self.resume_word is not None and self.resume_word(view))):
                 self.record(active_category='单词')
-                print('当前已确认单词拼写页面或匹配的卡包检查点，继续本次单词任务。', flush=True)
+                print('已识别单词任务页面，继续核对卡包或拼写；没有旧检查点时按当前列表重新确认入口。', flush=True)
+                self.log.event('daily_start_word_page_recognized',has_matching_checkpoint=bool(self.resume_word and self.resume_word(view)),api_calls=0)
                 self.call_worker(['daily_word_tasks.py', '--count', '50', '--max-cards', '10'])
                 view = self.read()
+            elif word_page:
+                # Selected other subjects: navigate out of a confirmed word page
+                # without answering it, then inventory the real dashboard.
+                view=(return_to_word_list(view,self.read,self.tap,self.log) if word_completion(view)
+                      else return_active_to_list(view,self.read,self.tap,self.log))
             # A confirmed list can return by the app's own top-left arrow.
             # Unknown details are left intact; launch daily mode at the dashboard.
             for category in nav.SUPPORTED:
                 if nav.is_menu(view, category):
                     view = nav.back_from_menu(view, category, self.read, self.tap, self.log)
                     break
+            if not nav.has_header(view,'今日任务'):
+                raise RuntimeError('当前页面不是首页或可恢复的任务页；请在手机返回“今日任务”后点击开始。'
+                                   '无需新建会话；现有进度和调用额度保留。')
             for step in range(max_tasks+1):
                 if nav.all_complete_modal(view):
                     view = nav.dismiss_all_complete(view, self.read, self.tap, self.log)

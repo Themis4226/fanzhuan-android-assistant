@@ -239,7 +239,7 @@ namespace FanzhuanDesktop {
             foreach (var b in jobButtons) b.Enabled = !busy;
         }
         void RunJob(string label, string[] args) {
-            if (Busy || OtherWorker()) return;
+            if (Busy || (!OfflineSelfTestCommand(args) && OtherWorker())) return;
             string folder = Path.Combine(Program.Root, "runs", DateTime.Now.ToString("yyyyMMdd_HHmmss_fffffff") + "_desktop"); Directory.CreateDirectory(folder);
             lastLog = Path.Combine(folder, "desktop.log"); if (logFile != null) logFile.Dispose(); logFile = new StreamWriter(lastLog, false, new UTF8Encoding(false));
             var p = new Process(); p.StartInfo = Program.PythonInfo(args); p.EnableRaisingEvents = true;
@@ -277,6 +277,13 @@ namespace FanzhuanDesktop {
         }
         void OpenFolder(string path) { Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo("explorer.exe", Program.Quote(path)) { UseShellExecute = false }); }
         void Require(bool condition, string reason) { if (!condition) throw new InvalidOperationException("自检失败：" + reason); }
+        bool OfflineSelfTestCommand(string[] args) {
+            // Only the two fixed test stubs can run beside a real phone worker.
+            // Normal starts, helpers and arbitrary Python remain serialized.
+            return TestDirectory != null && args.Length == 2 && args[0] == "-c" &&
+                (args[1] == "import time;print('桌面中文测试 OK',flush=True);time.sleep(.3)" ||
+                 args[1] == "import time;time.sleep(20)");
+        }
         void BeginTests() {
             Directory.CreateDirectory(TestDirectory);
             try {
@@ -292,6 +299,8 @@ namespace FanzhuanDesktop {
                 mode.SelectedIndex = 3;
                 Require(switchDevice.Text == "更换手机" && taskScripts.Contains("session_switch.py"), "更换手机入口");
                 Require(taskScripts.Contains("device_start.py"), "任务启动时自动检查换机");
+                Require(!OfflineSelfTestCommand(new[] { "device_start.py", "--prepare-only" }) &&
+                        !OfflineSelfTestCommand(new[] { "-c", "import os;os.system('adb devices')" }), "离线自检命令范围");
                 testStage = 0; RunJob("桌面离线自检", new[] { "-c", "import time;print('桌面中文测试 OK',flush=True);time.sleep(.3)" });
                 Require(Busy && stop.Enabled && !start.Enabled && !switchDevice.Enabled, "运行按钮互斥");
                 testTimer = new System.Windows.Forms.Timer { Interval = 200 };
@@ -314,7 +323,7 @@ namespace FanzhuanDesktop {
         void EndTests(Exception error) {
             if (testTimer != null) testTimer.Stop(); TestFailed = error != null;
             var report = new Dictionary<string, object> { { "status", error == null ? "passed" : "failed" }, { "phone_actions", 0 }, { "api_calls", 0 },
-                { "checks", new[] { "Unicode and Windows argv", "zero-fee defaults", "secret redaction", "hidden process output", "stop process tree", "busy controls", "word chain default", "daily coordinator default", "selected subjects", "explicit phone switch", "device preparation entry", "window rendering" } } };
+                { "checks", new[] { "Unicode and Windows argv", "zero-fee defaults", "secret redaction", "hidden process output", "stop process tree", "busy controls", "word chain default", "daily coordinator default", "selected subjects", "explicit phone switch", "device preparation entry", "offline self-test command isolation", "window rendering" } } };
             if (error != null) report["error"] = Clean(error.Message);
             File.WriteAllText(Path.Combine(TestDirectory, "desktop_validation.json"), Program.Json.Serialize(report), new UTF8Encoding(false)); Close();
         }

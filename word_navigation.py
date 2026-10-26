@@ -41,6 +41,24 @@ def is_active_card(view):
             and 0<=int(counters[0].group(1))<=int(counters[0].group(2)) and int(counters[0].group(2))>0)
 
 
+def recognized_word_start(view):
+    """Identify the observed learning page without relying on a prior session.
+
+    This only routes to the word worker. A capsule-obscured card number still
+    requires returning to the list and validating the selected tile there.
+    """
+    if not is_active_card(view):return False
+    if any(e['text']=='温馨提示' for e in view['elements']):return False
+    counters=[e for e in view['elements'] if re.fullmatch(r'学习\s*\d+\s*/\s*\d+',e['text'])]
+    if len(counters)!=1:return False
+    counter=counters[0]
+    n,total=map(int,re.findall(r'\d+',counter['text']))
+    words=[e for e in view['elements'] if re.fullmatch(r'[A-Za-z][A-Za-z -]*',e['text'])
+           and e.get('confidence',0)>=.85 and view['height']*.28<e['center'][1]<view['height']*.60]
+    return (counter.get('confidence',0)>=.85 and view['height']*.105<counter['center'][1]<view['height']*.18
+            and 0<=n<=total<=50 and bool(words))
+
+
 def wait_for(read,predicate,reason):
     # Input is sent once. Re-reading a transition never replays the tap.
     for _ in range(4):
